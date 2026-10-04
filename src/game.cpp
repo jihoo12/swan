@@ -1,12 +1,34 @@
 #include "game.hpp"
 #include "physics.hpp"
+#include "scene_io.hpp"
+#include <iostream>
 #include <algorithm>
 #include <cmath>
 namespace swan {
 namespace { constexpr float eyeHeight=1.65f; }
-Game::Game(bool overview) {
-    spawn(feet);
+Game::Game(bool overview):Game(makeGarden(),overview) {}
+Game::Game(Garden initial,bool overview,std::filesystem::path source,std::filesystem::path save)
+    :sourcePath(std::move(source)),savePath(std::move(save)) {
+    replaceDefinition(std::move(initial));
     if(overview) overviewCamera();
+}
+void Game::replaceDefinition(Garden initial) {
+    Garden runtime=initial; // Complete potentially throwing allocations before replacing the world.
+    definition=std::move(initial); garden=std::move(runtime);
+    time=0; collectedCount=0; paused=false; flight=false; view=Camera{};
+    spawn(definition.spawn);
+}
+void Game::reloadScene() {
+    if(sourcePath.empty()) replaceDefinition(definition);
+    else {
+        auto document=loadScene(sourcePath);
+        auto loaded=gardenFromScene(std::move(document.scene),document.spawn);
+        replaceDefinition(std::move(loaded));
+    }
+}
+void Game::saveDefinition(const std::filesystem::path& path) const {
+    // Export authored data, not transient animation, deleted pickups, or player progress.
+    swan::saveScene(path,{definition.scene,definition.spawn});
 }
 void Game::spawn(glm::vec3 position) {
     feet=position; verticalVelocity=0; grounded=false; jumpPending=false;
@@ -28,16 +50,28 @@ void Game::collect() {
     if(garden.scene.destroy(nearest)) {
         ++collectedCount;
         if(collectedCount==int(garden.shards.size())) {
-            if(auto* core=garden.scene.get(garden.core)) core->material={{1,0.7f,0.2f},3.5f};
+            garden.scene.assets().set("restored-core",{{1,0.7f,0.2f},3.5f});
+            if(auto* core=garden.scene.get(garden.core)) core->materialId="restored-core";
         }
     }
 }
 void Game::handleInput(const Input& input) {
     view.look(input.look);
+    if(input.reload) {
+        try { reloadScene(); fileMessage="Scene reloaded"; }
+        catch(const std::exception& e) { fileMessage="Reload failed (see console)"; std::cerr << "Reload: " << e.what() << '\n'; }
+    }
+    if(input.save) {
+        if(savePath.empty()) fileMessage="Use --save-scene PATH to enable F6";
+        else {
+            try { saveDefinition(savePath); fileMessage="Scene definition saved"; }
+            catch(const std::exception& e) { fileMessage="Save failed (see console)"; std::cerr << "Save: " << e.what() << '\n'; }
+        }
+    }
     if(input.pause) { paused=!paused; jumpPending=false; }
-    if(input.reset) { flight=false; view=Camera{}; spawn({0,0.2f,14}); }
+    if(input.reset) { flight=false; view=Camera{}; spawn(definition.spawn); }
     if(input.toggleFlight) {
-        if(flight) { flight=false; view=Camera{}; spawn({0,0.2f,14}); }
+        if(flight) { flight=false; view=Camera{}; spawn(definition.spawn); }
         else { flight=true; previousEye=view.position; verticalVelocity=0; jumpPending=false; }
     }
     if(input.jump && !paused && !flight) jumpPending=true;
@@ -69,7 +103,7 @@ void Game::fixedUpdate(float dt,const Input& input) {
     auto motion=moveCapsule(garden.scene,feet,movement*dt*speed+glm::vec3(0,verticalVelocity*dt,0));
     feet=motion.feet; grounded=motion.grounded;
     if((grounded && verticalVelocity<0) || (motion.ceiling && verticalVelocity>0)) verticalVelocity=0;
-    if(feet.y<-10) spawn({0,0.2f,14});
+    if(feet.y<-10) spawn(definition.spawn);
     view.position=feet+glm::vec3(0,eyeHeight,0);
 }
 RenderFrame Game::renderFrame(float interpolation) const {
@@ -78,7 +112,7 @@ RenderFrame Game::renderFrame(float interpolation) const {
     frame.objects.reserve(garden.scene.size());
     for(auto id:garden.scene.entities()) {
         const auto* entity=garden.scene.get(id);
-        frame.objects.push_back({entity->transform,entity->material});
+        frame.objects.push_back({entity->transform,garden.scene.assets().get(entity->materialId)});
     }
     return frame;
 }
@@ -93,6 +127,7 @@ std::string Game::status() const {
         }
     }
     if(paused) text+=" | PAUSED";
+    if(!fileMessage.empty()) text+=" | "+fileMessage;
     return text;
 }
 }

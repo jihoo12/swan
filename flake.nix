@@ -7,7 +7,7 @@
       eachSystem = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs { inherit system; }));
       build = pkgs: pkgs.stdenv.mkDerivation {
         pname = "swan";
-        version = "0.2.0";
+        version = "0.3.0";
         src = pkgs.lib.cleanSourceWith {
           src = self;
           filter = path: type:
@@ -16,7 +16,7 @@
               && pkgs.lib.cleanSourceFilter path type;
         };
         nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config pkgs.glslang ];
-        buildInputs = [ pkgs.vulkan-loader pkgs.vulkan-headers pkgs.glfw pkgs.glm ];
+        buildInputs = [ pkgs.vulkan-loader pkgs.vulkan-headers pkgs.glfw pkgs.glm pkgs.nlohmann_json ];
         cmakeFlags = [ "-DCMAKE_BUILD_TYPE=Release" ];
         doCheck = true;
         meta.mainProgram = "swan";

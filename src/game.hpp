@@ -3,11 +3,15 @@
 #include "input.hpp"
 #include "game_layer.hpp"
 #include <string>
+#include <filesystem>
 namespace swan {
 // Gameplay has no GLFW/Vulkan dependency; it can run entirely in CPU tests.
 class Game final : public GameLayer {
 public:
     explicit Game(bool overview=false);
+    Game(Garden initial,bool overview,std::filesystem::path source={},std::filesystem::path save={});
+    void reloadScene();
+    void saveDefinition(const std::filesystem::path& path) const;
     void handleInput(const Input& input) override;
     void fixedUpdate(float dt,const Input& input) override;
     RenderFrame renderFrame(float interpolation=1) const override;
@@ -23,7 +27,10 @@ public:
 private:
     void overviewCamera();
     void collect();
-    Garden garden=makeGarden();
+    void replaceDefinition(Garden initial);
+    Garden definition,garden;
+    std::filesystem::path sourcePath,savePath;
+    std::string fileMessage;
     Camera view;
     glm::vec3 feet{0,0.2f,14},previousEye=view.position;
     float verticalVelocity=0,time=0;

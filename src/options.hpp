@@ -7,6 +7,7 @@ struct Options {
     int frames=0;
     bool resizeTest=false;
     bool overview=false;
-    std::filesystem::path shaderDir;
+    std::filesystem::path shaderDir,scenePath,exportPath,savePath;
+    bool validateScene=false;
 };
 }

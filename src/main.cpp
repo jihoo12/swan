@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "game.hpp"
+#include "scene_io.hpp"
 #include <iostream>
 #include <charconv>
 int main(int argc,char** argv) {
@@ -8,13 +9,17 @@ int main(int argc,char** argv) {
         for(int i=1;i<argc;++i) {
             std::string arg=argv[i];
             if(arg=="--help") {
-                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--validation] [--x11] [--overview] [--frames N] [--resize-test] [--shader-dir PATH]\n"
-                          << "WASD move | Shift sprint | click to look | Space jump | E collect\nF toggle flight (Space/Ctrl ascend/descend) | P pause | R respawn | Esc release / quit\n";
+                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--validation] [--x11] [--overview] [--frames N] [--resize-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
+                          << "WASD move | Shift sprint | click to look | Space jump | E collect\nF toggle flight (Space/Ctrl ascend/descend) | P pause | R respawn | F5 reload | F6 save definition | Esc release / quit\n";
                 return 0;
             } else if(arg=="--validation") options.validation=true;
             else if(arg=="--overview") options.overview=true;
             else if(arg=="--x11") options.x11=true;
             else if(arg=="--resize-test") options.resizeTest=true;
+            else if(arg=="--scene" && i+1<argc) options.scenePath=argv[++i];
+            else if(arg=="--save-scene" && i+1<argc) options.savePath=argv[++i];
+            else if(arg=="--export-scene" && i+1<argc) options.exportPath=argv[++i];
+            else if(arg=="--validate-scene" && i+1<argc) { options.scenePath=argv[++i]; options.validateScene=true; }
             else if(arg=="--shader-dir" && i+1<argc) options.shaderDir=argv[++i];
             else if(arg=="--frames" && i+1<argc) {
                 std::string value=argv[++i];
@@ -22,7 +27,22 @@ int main(int argc,char** argv) {
                 if(ec!=std::errc{} || end!=value.data()+value.size() || options.frames<=0) throw std::runtime_error("--frames requires a positive integer");
             } else throw std::runtime_error("Unknown or incomplete argument: "+arg);
         }
-        swan::Game game(options.overview);
+        swan::Garden level;
+        if(!options.scenePath.empty()) {
+            auto document=swan::loadScene(options.scenePath);
+            level=swan::gardenFromScene(std::move(document.scene),document.spawn);
+        } else level=swan::makeGarden();
+        if(options.validateScene) {
+            std::cout << "Valid scene: " << level.scene.size() << " entities, "
+                      << level.scene.assets().entries().size() << " materials\n";
+            return 0;
+        }
+        if(!options.exportPath.empty()) {
+            swan::saveScene(options.exportPath,{level.scene,level.spawn});
+            std::cout << "Exported scene: " << options.exportPath << '\n';
+            return 0;
+        }
+        swan::Game game(std::move(level),options.overview,options.scenePath,options.savePath);
         swan::Engine engine(options);
         engine.run(game);
     } catch(const std::exception& e) { std::cerr << "Swan: " << e.what() << '\n'; return 1; }

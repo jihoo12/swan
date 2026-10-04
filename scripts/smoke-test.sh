@@ -27,5 +27,10 @@ cmake -S . -B build -G Ninja
 cmake --build build
 ctest --test-dir build --output-on-failure
 binary=${1:-./build/swan}
+# These commands must work without any window-system display.
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --export-scene "$work/garden.swan.json"
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/garden.swan.json"
 timeout 60s "$binary" --x11 --validation --frames 90 --resize-test
 timeout 60s "$binary" --x11 --validation --overview --frames 45
+timeout 60s "$binary" --x11 --validation --scene "$work/garden.swan.json" --frames 45
+timeout 60s "$binary" --x11 --validation --scene assets/scenes/playground.swan.json --frames 45

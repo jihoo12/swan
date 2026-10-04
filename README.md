@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.2 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. No external art assets are needed.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.3 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can now be exported, validated, loaded from JSON, and reloaded while the game runs. No external art assets are needed.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -34,6 +34,19 @@ nix build path:.
 
 SPIR-V shaders are installed alongside the executable. Shader lookup uses the installed executable's location, then the CMake build directory. `--shader-dir PATH` overrides it.
 
+## Scene files and material assets
+
+```sh
+./build/swan --scene assets/scenes/playground.swan.json
+./build/swan --export-scene /tmp/garden.swan.json
+./build/swan --validate-scene /tmp/garden.swan.json
+./build/swan --scene /tmp/garden.swan.json --save-scene /tmp/garden-copy.swan.json
+```
+
+Export and validation commands run without initializing GLFW or Vulkan. Edit a loaded scene in your text editor and press F5 to reload it. Failed reloads leave the active game intact. F6 writes the loaded authored definition to the explicit `--save-scene` path; this exports a world, rather than saving player progress or live animation. Successful reload resets progress and respawns at the scene's spawn position.
+
+The versioned JSON format preserves stable entity IDs, transforms, material references, collision/interaction flags, and animation settings. A scene owns a named material asset library; entities share these material definitions. The hand-editable playground demonstrates shared materials and three collectibles. See [the scene format and editing guide](assets/README.md) for field details and validation rules. Mesh assets currently support `builtin:cube` only.
+
 ## Controls
 
 | Input | Action |
@@ -46,6 +59,8 @@ SPIR-V shaders are installed alongside the executable. Shader lookup uses the in
 | E | Collect a nearby shard in walking mode |
 | F | Switch walking/flight; returning to walking respawns at the entrance |
 | P | Pause/resume movement and world animation; mouse look remains active |
+| F5 | Reload the input scene; without a file, restart the original world |
+| F6 | Export the authored definition to `--save-scene PATH` |
 | R | Respawn in walking mode; collected shards remain collected |
 | Escape | Release the mouse; press again to quit |
 
@@ -55,13 +70,13 @@ Losing focus releases the mouse and clears held movement. Walking uses gravity, 
 
 | CMake target | Responsibility |
 | --- | --- |
-| `swan_core` | Scene storage, entity lifetime, transforms/materials, static collision |
+| `swan_core` | Scene storage, entity lifetime, named material assets, JSON persistence, static collision |
 | `swan_renderer` | GLFW input/window, Vulkan resources, render snapshots |
 | `swan_runtime` | Main loop, fixed simulation updates, render scheduling |
 | `swan_demo` | Procedural garden and sample gameplay |
 | `swan` | Command-line startup and game/runtime composition |
 
-The core and demo depend on GLM, with no GLFW or Vulkan dependency. CPU tests exercise gameplay without creating a window or device.
+The core and demo depend on GLM and the core uses nlohmann/json for persistence, with no GLFW or Vulkan dependency. CPU tests exercise gameplay without creating a window or device.
 
 The engine receives a `GameLayer` from the application. Each display frame samples held input and one-shot actions, applies game actions once, runs simulation updates at **120 Hz**, and renders a `RenderFrame` containing a camera and render objects. Camera position is interpolated between simulation updates. Frame delays are capped at 250 ms and 30 simulation steps to bound catch-up after a stall.
 
@@ -73,7 +88,7 @@ engine.run(game);
 
 To implement another game, derive from `GameLayer` and implement `handleInput`, `fixedUpdate`, `renderFrame`, and `status`. Pass your layer to `Engine::run`; the renderer needs no game-specific changes. Link your application to `swan_runtime` and your game code. The default executable links the garden demo separately.
 
-`Scene` owns named entities with transforms, materials, optional animation, and solid/collectible flags. Keep `EntityId` handles rather than references across scene mutation. Deletion increments a slot generation; stale handles cannot access a replacement entity. Render snapshots contain values, so the GPU layer never owns gameplay entities.
+`Scene` owns named entities with stable file keys, transforms, material asset references, optional animation, and solid/collectible flags. Keep `EntityId` handles rather than references across scene mutation. Deletion increments a slot generation; stale handles cannot access a replacement entity. Material names and file keys persist through serialization; runtime handles are recreated on load. Handles belong to their scene; discard them on scene replacement and use stable file keys for references across reloads. Render snapshots contain values, so the GPU layer never owns gameplay entities.
 
 ## Rendering and collision
 
@@ -103,21 +118,21 @@ For automated rendering without a desktop or hardware GPU:
 nix develop path:. --command bash scripts/smoke-test.sh
 ```
 
-The smoke test uses Xvfb and Mesa Lavapipe, enables synchronization validation, renders 90 frames, and resizes the window twice. It checks walking and overview modes. To test installed shader lookup too:
+The smoke test first exports and validates a scene without a window, then uses Xvfb and Mesa Lavapipe, enables synchronization validation, renders 90 frames, and resizes the window twice. It checks walking, overview, exported-scene, and hand-authored example modes. To test installed shader lookup too:
 
 ```sh
 nix build path:.
 nix develop path:. --command bash scripts/smoke-test.sh ./result/bin/swan
 ```
 
-CPU tests cover entity deletion/reuse and invalid creation, procedural scene invariants, capsule floor/wall/ceiling contacts and rotated walls, equivalent movement at 60/144 display frames per second, jump/landing, pause, collection/completion, mode switching, and bounded simulation catch-up. The tests use explicit checks in release builds.
+CPU tests cover entity deletion/reuse and invalid creation, procedural scene invariants, capsule floor/wall/ceiling contacts and rotated walls, equivalent movement at 60/144 display frames per second, jump/landing, pause, collection/completion, mode switching, and bounded simulation catch-up. Persistence tests cover deterministic round trips, schema/asset errors, invalid-save preservation, authored exports after gameplay, and failed/successful reloads. The bundled example also has a headless command-line validation test. The tests use explicit checks in release builds.
 
 ```sh
 nix flake check path:.
 ./build/swan --help
 ```
 
-`nix flake check` builds the package and runs both CPU test executables. Graphical smoke tests are separate.
+`nix flake check` builds the package and runs three CPU test executables. Graphical smoke tests are separate.
 
 ## Layout
 
@@ -128,6 +143,8 @@ nix flake check path:.
 | `src/engine.*`, `src/fixed_step.hpp` | Runtime orchestration and simulation clock |
 | `src/game_layer.hpp`, `src/input.hpp`, `src/render_frame.hpp` | Game/runtime/renderer interfaces |
 | `src/scene.*`, `src/camera.hpp` | Entity storage and camera math |
+| `src/assets.*`, `src/scene_io.*` | Named material assets and versioned JSON scene IO |
+| `assets/scenes/`, `assets/README.md` | Hand-editable example and scene format guide |
 | `src/physics.*` | Character capsule against static boxes |
 | `src/game.*`, `src/garden.*` | Sample gameplay and procedural content |
 | `src/renderer.*` | GLFW and Vulkan backend |

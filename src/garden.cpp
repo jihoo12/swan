@@ -1,13 +1,35 @@
 #include "garden.hpp"
 #include <cmath>
+#include <stdexcept>
 namespace swan {
+Garden gardenFromScene(Scene scene,glm::vec3 spawn) {
+    Garden garden; garden.scene=std::move(scene); garden.spawn=spawn;
+    for(auto id:garden.scene.entities()) {
+        const auto* entity=garden.scene.get(id);
+        if(entity->goal) {
+            if(garden.scene.get(garden.core)) throw std::invalid_argument("Garden must have exactly one goal entity");
+            garden.core=id;
+        }
+        if(entity->collectible) garden.shards.push_back(id);
+    }
+    if(!garden.scene.get(garden.core) || garden.shards.empty())
+        throw std::invalid_argument("Garden requires one goal and at least one collectible");
+    return garden;
+}
 Garden makeGarden() {
     Garden garden;
     unsigned count=0;
     auto box = [&](glm::vec3 p,glm::vec3 s,glm::vec3 c,float yaw=0,float emission=0,bool animated=false) {
         Entity entity;
         entity.name="Garden box "+std::to_string(count++);
-        entity.transform={p,s,yaw}; entity.material={c,emission}; entity.solid=!animated;
+        entity.transform={p,s,yaw}; entity.solid=!animated; entity.goal=animated;
+        Material material{c,emission};
+        for(const auto& [id,existing]:garden.scene.assets().entries())
+            if(existing.color==c && existing.emission==emission) {entity.materialId=id; break;}
+        if(garden.scene.assets().get(entity.materialId).color!=c || garden.scene.assets().get(entity.materialId).emission!=emission) {
+            entity.materialId="garden-material-"+std::to_string(garden.scene.assets().entries().size());
+            garden.scene.assets().set(entity.materialId,material);
+        }
         if(animated) entity.animation=Animation{p.y,0,0.35f,0.5f};
         auto id=garden.scene.create(std::move(entity));
         if(animated) garden.core=id;
@@ -42,7 +64,8 @@ Garden makeGarden() {
         Entity shard;
         shard.name="Light shard "+std::to_string(i+1);
         shard.transform={{std::cos(angle)*6,1.2f,std::sin(angle)*6},{0.35f,0.6f,0.35f},angle};
-        shard.material={{1,0.65f,0.12f},1.8f}; shard.collectible=true;
+        garden.scene.assets().set("shard-gold",{{1,0.65f,0.12f},1.8f});
+        shard.materialId="shard-gold"; shard.collectible=true;
         shard.animation=Animation{1.2f,float(i),0.15f,1};
         garden.shards.push_back(garden.scene.create(std::move(shard)));
     }
