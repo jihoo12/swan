@@ -40,3 +40,9 @@ if [[ -f "$installed_scene" ]]; then mesh_scene="$installed_scene"; fi
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$mesh_scene" --export-scene "$work/mesh-garden.swan.json"
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/mesh-garden.swan.json"
 timeout 60s "$binary" --x11 --validation --scene "$work/mesh-garden.swan.json" --reload-test --resize-test --frames 90
+texture_scene=assets/scenes/textured-garden.swan.json
+installed_texture_scene="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/textured-garden.swan.json"
+if [[ -f "$installed_texture_scene" ]]; then texture_scene="$installed_texture_scene"; fi
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$texture_scene" --export-scene "$work/textured-garden.swan.json"
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/textured-garden.swan.json"
+timeout 60s "$binary" --x11 --validation --scene "$work/textured-garden.swan.json" --reload-test --resize-test --frames 90

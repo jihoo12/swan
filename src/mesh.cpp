@@ -27,7 +27,7 @@ SharedMesh cubeMesh() {
         const std::array<glm::vec2,4> corners={glm::vec2(-1,-1),{1,-1},{1,1},{-1,1}};
         for(uint32_t face=0;face<6;++face) {
             auto n=normals[face],t=tangents[face],b=glm::cross(n,t);
-            for(auto uv:corners) mesh->vertices.push_back({(n+t*uv.x+b*uv.y)*0.5f,n});
+            for(auto uv:corners) mesh->vertices.push_back({(n+t*uv.x+b*uv.y)*0.5f,n,(uv+glm::vec2(1))*0.5f});
             for(uint32_t index:{0u,1u,2u,0u,2u,3u}) mesh->indices.push_back(face*4+index);
         }
         bounds(*mesh); return mesh;
@@ -62,7 +62,7 @@ SharedMesh loadObjMesh(const std::filesystem::path& path) {
         if(!tinyobj::LoadObj(&attributes,&shapes,&materials,&warning,&error,&source,nullptr,false,false))
             throw std::runtime_error(error);
         auto mesh=std::make_shared<MeshData>();
-        std::map<std::tuple<int,int,size_t>,uint32_t> vertices;
+        std::map<std::tuple<int,int,int,size_t>,uint32_t> vertices;
         size_t faceSerial=0;
         for(const auto& shape:shapes) {
             size_t offset=0;
@@ -92,9 +92,16 @@ SharedMesh loadObjMesh(const std::filesystem::path& path) {
                         normal=glm::normalize(normal);
                     }
                     // Supplied normals share vertices. Missing normals split faces for flat shading.
-                    auto key=std::make_tuple(indices[i].vertex_index,normalIndex,normalIndex<0?faceSerial:0);
+                    int textureIndex=indices[i].texcoord_index;
+                    glm::vec2 uv{};
+                    if(textureIndex>=0) {
+                        if(size_t(textureIndex)>=attributes.texcoords.size()/2) throw std::runtime_error("OBJ UV index out of range");
+                        uv={attributes.texcoords[2*textureIndex],1-attributes.texcoords[2*textureIndex+1]};
+                        if(!std::isfinite(uv.x) || !std::isfinite(uv.y)) throw std::runtime_error("OBJ UV is nonfinite");
+                    }
+                    auto key=std::make_tuple(indices[i].vertex_index,normalIndex,textureIndex,normalIndex<0?faceSerial:0);
                     auto [it,inserted]=vertices.try_emplace(key,uint32_t(mesh->vertices.size()));
-                    if(inserted) mesh->vertices.push_back({positions[i],normal});
+                    if(inserted) mesh->vertices.push_back({positions[i],normal,uv});
                     mesh->indices.push_back(it->second);
                 }
                 offset+=3; ++faceSerial;

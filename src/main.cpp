@@ -36,7 +36,8 @@ int main(int argc,char** argv) {
         if(options.validateScene) {
             std::cout << "Valid scene: " << level.scene.size() << " entities, "
                       << level.scene.assets().entries().size() << " materials, "
-                      << level.scene.meshes().entries().size() << " mesh assets\n";
+                      << level.scene.meshes().entries().size() << " mesh assets, "
+                      << level.scene.textures().entries().size() << " texture assets\n";
             return 0;
         }
         if(!options.exportPath.empty()) {

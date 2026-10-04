@@ -35,16 +35,26 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     if(text.size()>maxBytes) throw std::invalid_argument("Scene file exceeds 16 MiB");
     try {
         const auto root=Json::parse(text);
-        keys(root,{"format","version","spawn","materials","meshes","entities"});
-        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || (root.at("version")!=1 && root.at("version")!=2))
+        keys(root,{"format","version","spawn","materials","meshes","textures","entities"});
+        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || (root.at("version")!=1 && root.at("version")!=2 && root.at("version")!=3))
             throw std::invalid_argument("Unsupported scene format/version");
         SceneDocument document;
         document.spawn=vector(root.at("spawn"));
         const auto& materials=root.at("materials");
         if(!materials.is_object()) throw std::invalid_argument("Materials must be an object");
         for(auto it=materials.begin();it!=materials.end();++it) {
-            keys(it.value(),{"color","emission"});
-            document.scene.assets().set(it.key(),{vector(it.value().at("color")),number(it.value().at("emission"))});
+            keys(it.value(),{"color","emission","texture","uv_scale"});
+            Material material{vector(it.value().at("color")),number(it.value().at("emission"))};
+            if(it.value().contains("texture") || it.value().contains("uv_scale")) {
+                if(root.at("version")!=3) throw std::invalid_argument("Textured materials require scene version 3");
+                material.textureId=it.value().value("texture",std::string("builtin:white"));
+                if(it.value().contains("uv_scale")) {
+                    const auto& uv=it.value().at("uv_scale");
+                    if(!uv.is_array() || uv.size()!=2) throw std::invalid_argument("UV scale requires two components");
+                    material.uvScale={number(uv[0]),number(uv[1])};
+                }
+            }
+            document.scene.assets().set(it.key(),material);
         }
         if(root.contains("meshes")) {
             if(root.at("version")==1) throw std::invalid_argument("Mesh assets require scene version 2");
@@ -57,6 +67,20 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
                 if(source.empty()) throw std::invalid_argument("Mesh source cannot be empty");
                 document.scene.meshes().load(it.key(),base/std::filesystem::path(source));
             }
+        }
+        if(root.contains("textures")) {
+            if(root.at("version")!=3) throw std::invalid_argument("Texture assets require scene version 3");
+            const auto& textures=root.at("textures");
+            if(!textures.is_object() || textures.size()>256) throw std::invalid_argument("Textures must be an object with at most 256 entries");
+            auto base=baseDirectory.empty()?std::filesystem::current_path():baseDirectory;
+            for(auto it=textures.begin();it!=textures.end();++it) {
+                keys(it.value(),{"source"}); auto source=it.value().at("source").get<std::string>();
+                if(source.empty()) throw std::invalid_argument("Texture source cannot be empty");
+                document.scene.textures().load(it.key(),base/std::filesystem::path(source));
+            }
+        }
+        for(const auto& [id,material]:document.scene.assets().entries()) {
+            (void)id; if(!document.scene.textures().contains(material.textureId)) throw std::invalid_argument("Unknown texture asset: "+material.textureId);
         }
         const auto& entities=root.at("entities");
         if(!entities.is_array() || entities.size()>maxEntities) throw std::invalid_argument("Expected an entity array with at most 10000 entries");
@@ -84,15 +108,20 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     } catch(const std::exception& e) { throw std::invalid_argument(std::string("Invalid Swan scene: ")+e.what()); }
 }
 std::string serializeScene(const SceneDocument& document,const std::filesystem::path& baseDirectory) {
-    Json root={{"format","swan-scene"},{"version",2},{"spawn",vector(document.spawn)},
-               {"materials",Json::object()},{"meshes",Json::object()},{"entities",Json::array()}};
+    Json root={{"format","swan-scene"},{"version",3},{"spawn",vector(document.spawn)},
+               {"materials",Json::object()},{"meshes",Json::object()},{"textures",Json::object()},{"entities",Json::array()}};
     for(const auto& [id,material]:document.scene.assets().entries())
-        root["materials"][id]={{"color",vector(material.color)},{"emission",material.emission}};
+        root["materials"][id]={{"color",vector(material.color)},{"emission",material.emission},
+            {"texture",material.textureId},{"uv_scale",Json::array({material.uvScale.x,material.uvScale.y})}};
     auto base=baseDirectory.empty()?std::filesystem::current_path():std::filesystem::absolute(baseDirectory);
     for(const auto& [id,mesh]:document.scene.meshes().entries()) if(!mesh.source.empty()) {
         std::error_code error;
         auto relative=std::filesystem::relative(mesh.source,base,error);
         root["meshes"][id]={{"source",(error?mesh.source:relative).generic_string()}};
+    }
+    for(const auto& [id,texture]:document.scene.textures().entries()) if(!texture.source.empty()) {
+        std::error_code error; auto relative=std::filesystem::relative(texture.source,base,error);
+        root["textures"][id]={{"source",(error?texture.source:relative).generic_string()}};
     }
     for(auto id:document.scene.entities()) {
         const auto& e=*document.scene.get(id);

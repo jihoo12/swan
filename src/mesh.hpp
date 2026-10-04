@@ -5,7 +5,7 @@
 #include <memory>
 #include <vector>
 namespace swan {
-struct Vertex { glm::vec3 position{},normal{}; };
+struct Vertex { glm::vec3 position{},normal{}; glm::vec2 uv{}; };
 struct MeshData {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;

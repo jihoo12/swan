@@ -27,6 +27,22 @@ private:
     void destroySwapchain();
     void createPipeline();
     void rebuild();
+    struct GpuTexture {
+        SharedTexture owner;
+        VkImage image=VK_NULL_HANDLE;
+        VkDeviceMemory memory=VK_NULL_HANDLE;
+        VkImageView view=VK_NULL_HANDLE;
+        VkDescriptorSet descriptor=VK_NULL_HANDLE;
+    };
+    void createDescriptors();
+    GpuTexture uploadTexture(SharedTexture texture);
+    void releaseTexture(GpuTexture& texture);
+    void synchronizeTextures(const RenderFrame& frame);
+    std::map<const TextureData*,GpuTexture> gpuTextures;
+    VkDescriptorSetLayout textureLayout=VK_NULL_HANDLE;
+    VkDescriptorPool texturePool=VK_NULL_HANDLE;
+    VkSampler textureSampler=VK_NULL_HANDLE;
+    size_t uploadedTextures=0;
     struct GpuMesh {
         SharedMesh owner;
         VkBuffer buffer=VK_NULL_HANDLE;

@@ -6,7 +6,7 @@
 ./build/swan --scene assets/scenes/playground.swan.json
 ```
 
-A scene file contains `format: "swan-scene"`, integer `version: 1` or `2`, a `spawn` feet position, named `materials`, and `entities`. All vectors use three numeric components. Positions/scales use world units; `yaw` is in radians. Material colors are nonnegative linear RGB values; `emission` is a nonnegative multiplier.
+A scene file contains `format: "swan-scene"`, integer `version: 1`, `2`, or `3`, a `spawn` feet position, named `materials`, and `entities`. All vectors use three numeric components. Positions/scales use world units; `yaw` is in radians. Material colors are nonnegative linear RGB values; `emission` is a nonnegative multiplier.
 
 Each entity requires a unique stable `id`, a `name`, a `mesh` asset ID (`builtin:cube` is always available), a named `material`, and a `transform` containing `position`, positive `scale`, and `yaw`. Runtime generation handles are rebuilt when loading; stable file IDs remain unchanged.
 
@@ -34,11 +34,41 @@ The version 2 example uses the locally authored `meshes/crystal.obj` for the goa
 
 Entities reference `"mesh": "crystal-mesh"`. Source paths are resolved relative to the **scene file's directory**, independently of the working directory. Multiple IDs resolving to the same file share one CPU mesh and one GPU upload. Reload builds a new catalog so file edits become visible; malformed or missing OBJ data prevents the entire world replacement. `builtin:` names cannot be overridden.
 
-The OBJ subset accepts triangular faces, positive/negative position and normal indices, and optional normals. Supplied normals are normalized; missing normals are generated per face for flat shading. Triangulate meshes in your authoring tool before export. Non-triangle faces, line/point primitives, invalid position/normal indices, degenerate triangles, and invalid normals are rejected. Files are limited to 32 MiB and 1,000,000 triangle corners. UVs, vertex colors, smoothing groups, and MTL files are not used; appearance comes from scene materials. Bounds are computed from referenced vertices; solid meshes collide using a rotated box proxy, not exact triangle collision.
+The OBJ subset accepts triangular faces, positive/negative position and normal indices, and optional normals. Supplied normals are normalized; missing normals are generated per face for flat shading. Triangulate meshes in your authoring tool before export. Non-triangle faces, line/point primitives, invalid position/normal indices, degenerate triangles, and invalid normals are rejected. Files are limited to 32 MiB and 1,000,000 triangle corners. UVs are retained and the V coordinate is flipped to match PNG row order. Missing UVs default to (0, 0). Vertex colors, smoothing groups, and MTL files are not used; appearance comes from scene materials. Bounds are computed from referenced vertices; solid meshes collide using a rotated box proxy, not exact triangle collision.
 
-Export writes version 2 and rebases mesh sources relative to the output directory. It preserves references rather than copying OBJ files. Keep referenced files available when moving or sharing a scene. Existing version 1 scenes still load; version 1 does not allow a `meshes` table.
+Export writes version 3 and rebases mesh/texture sources relative to the output directory. It preserves references rather than copying OBJ/PNG files. Keep referenced files available when moving or sharing a scene. Existing version 1 scenes still load; version 1 does not allow a `meshes` table.
 
 GPU resources use a shared buffer containing vertices and 32-bit indices. Buffers are uploaded once per resource and old ones are freed after the frame fence. `--reload-test --frames 90` triggers F5-style reloads after 10 and 30 frames for validation; use it with `--scene` to exercise mesh replacement.
+
+## PNG textures and UV tiling
+
+```sh
+./build/swan --scene assets/scenes/textured-garden.swan.json
+```
+
+![PNG textures on cube and imported OBJ surfaces](../docs/textured-garden.png)
+
+The version 3 example adds an authored courtyard PNG to the cube floor and an imported tapered-pillar OBJ with UVs. PNG decoding uses libpng; the engine owns the asset catalog and Vulkan upload/rendering code. Add a texture table and reference it from a material:
+
+```json
+"textures": {
+  "stone-tiles": { "source": "../textures/courtyard.png" }
+},
+"materials": {
+  "floor": {
+    "color": [0.7, 0.85, 0.9],
+    "emission": 0,
+    "texture": "stone-tiles",
+    "uv_scale": [8, 8]
+  }
+}
+```
+
+Paths resolve relative to the scene file. Up to 256 imported textures are supported, each limited to 16 MiB encoded and 4096 by 4096 pixels. PNGs decode to RGBA8; the GPU image uses sRGB so sampled RGB enters lighting in linear space. Alpha is decoded but currently ignored by the opaque renderer. JPEG, normal maps, mipmaps, and anisotropic filtering are not implemented yet.
+
+`texture` defaults to `builtin:white` and `uv_scale` defaults to `[1, 1]`. UV scales must be positive and finite. Sampling uses linear filtering and repeat addressing. Each cube face has UVs from 0 to 1; imported meshes use OBJ `vt` coordinates, with V flipped for top-to-bottom PNG storage. Vertex sharing preserves seams where UV indices differ. Missing UVs sample the same point across that face, so author UVs before assigning a detailed texture to an imported model.
+
+Texture aliases share decoded pixels and GPU resources. Reload creates a fresh catalog; invalid PNGs or missing texture references leave the old world active. GPU images, image views, and descriptors are released only after the previous frame completes. Upload uses a temporary staging buffer and an explicit queue wait; resource streaming is currently synchronous. Versions 1 and 2 load without texture fields; version 3 fields are rejected when declared under an older version.
 
 ## Editing workflow
 

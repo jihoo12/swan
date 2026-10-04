@@ -33,6 +33,8 @@ public:
     const MaterialAssets& assets() const { return materialAssets; }
     MeshAssets& meshes() { return meshAssets; }
     const MeshAssets& meshes() const { return meshAssets; }
+    TextureAssets& textures() { return textureAssets; }
+    const TextureAssets& textures() const { return textureAssets; }
     bool destroy(EntityId id);
     Entity* get(EntityId id);
     const Entity* get(EntityId id) const;
@@ -46,5 +48,6 @@ private:
     uint64_t serial=0;
     MaterialAssets materialAssets;
     MeshAssets meshAssets;
+    TextureAssets textureAssets;
 };
 }

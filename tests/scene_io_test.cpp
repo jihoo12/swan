@@ -36,11 +36,12 @@ int main() {
         auto loadedGarden=swan::gardenFromScene(restored.scene,restored.spawn);
         require(loadedGarden.shards.size()==5 && loadedGarden.scene.get(loadedGarden.core),"Game roles lost on round trip");
         auto json=Json::parse(text);
-        auto legacy=json; legacy["version"]=1; legacy.erase("meshes");
+        auto legacy=json; legacy["version"]=1; legacy.erase("meshes"); legacy.erase("textures");
+        for(auto& material:legacy["materials"]) {material.erase("texture"); material.erase("uv_scale");}
         require(swan::parseScene(legacy.dump()).scene.size()==442,"Legacy version 1 scene no longer loads");
         legacy["meshes"]=Json::object();
         rejects([&]{swan::parseScene(legacy.dump());},"Version 1 accepted version 2 mesh table");
-        auto mutated=json; mutated["version"]=3;
+        auto mutated=json; mutated["version"]=4;
         rejects([&]{swan::parseScene(mutated.dump());},"Unsupported version accepted");
         mutated=json; mutated["entities"][0]["transform"]["scale"][0]=0;
         rejects([&]{swan::parseScene(mutated.dump());},"Invalid scale accepted");

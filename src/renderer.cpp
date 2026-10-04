@@ -13,7 +13,7 @@ namespace {
 void check(VkResult result,const char* operation) {
     if(result!=VK_SUCCESS) throw std::runtime_error(std::string(operation)+" (VkResult "+std::to_string(result)+")");
 }
-struct Push { glm::mat4 vp; glm::vec4 positionTime,scaleGlow,color,eye; };
+struct Push { glm::mat4 vp; glm::vec4 positionUvV,scaleGlow,color,eyeUvU; };
 static_assert(sizeof(Push)==128);
 VkImageMemoryBarrier barrier(VkImage image,VkImageAspectFlags aspect,VkImageLayout oldLayout,VkImageLayout newLayout,VkAccessFlags src,VkAccessFlags dst) {
     VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
@@ -73,7 +73,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,4,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,5,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -133,7 +133,7 @@ void VulkanRenderer::initialize() {
         auto installed=executable.parent_path()/"../share/swan/shaders";
         options.shaderDir=(!ec && std::filesystem::exists(installed))?installed:std::filesystem::path(SWAN_SHADER_DIR);
     }
-    createSwapchain(); createPipeline();
+    createDescriptors(); createSwapchain(); createPipeline();
 
 }
 uint32_t VulkanRenderer::memoryType(uint32_t mask,VkMemoryPropertyFlags flags) {
@@ -189,20 +189,21 @@ VkShaderModule VulkanRenderer::shader(const char* name) {
 }
 void VulkanRenderer::createPipeline() {
     VkPushConstantRange range{VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(Push)};
-    if(!layout) { VkPipelineLayoutCreateInfo li{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO}; li.pushConstantRangeCount=1; li.pPushConstantRanges=&range; check(vkCreatePipelineLayout(device,&li,nullptr,&layout),"Pipeline layout"); }
+    if(!layout) { VkPipelineLayoutCreateInfo li{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO}; li.setLayoutCount=1; li.pSetLayouts=&textureLayout; li.pushConstantRangeCount=1; li.pPushConstantRanges=&range; check(vkCreatePipelineLayout(device,&li,nullptr,&layout),"Pipeline layout"); }
     VkShaderModule vert=shader("scene.vert.spv"),frag=VK_NULL_HANDLE;
     try {
         frag=shader("scene.frag.spv");
         VkPipelineShaderStageCreateInfo stages[2]{};
         stages[0]={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_VERTEX_BIT,vert,"main",nullptr};
         stages[1]={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_FRAGMENT_BIT,frag,"main",nullptr};
-        static_assert(sizeof(Vertex)==24 && offsetof(Vertex,normal)==12);
+        static_assert(sizeof(Vertex)==32 && offsetof(Vertex,normal)==12 && offsetof(Vertex,uv)==24);
         VkVertexInputBindingDescription binding{0,sizeof(Vertex),VK_VERTEX_INPUT_RATE_VERTEX};
-        VkVertexInputAttributeDescription attributes[2]={{0,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,position)},
-                                                       {1,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,normal)}};
+        VkVertexInputAttributeDescription attributes[3]={{0,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,position)},
+                                                       {1,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,normal)},
+                                                       {2,0,VK_FORMAT_R32G32_SFLOAT,offsetof(Vertex,uv)}};
         VkPipelineVertexInputStateCreateInfo vertex{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         vertex.vertexBindingDescriptionCount=1; vertex.pVertexBindingDescriptions=&binding;
-        vertex.vertexAttributeDescriptionCount=2; vertex.pVertexAttributeDescriptions=attributes;
+        vertex.vertexAttributeDescriptionCount=3; vertex.pVertexAttributeDescriptions=attributes;
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO}; assembly.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO}; viewport.viewportCount=1; viewport.scissorCount=1;
         VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO}; raster.polygonMode=VK_POLYGON_MODE_FILL; raster.cullMode=VK_CULL_MODE_NONE; raster.frontFace=VK_FRONT_FACE_COUNTER_CLOCKWISE; raster.lineWidth=1;
@@ -262,6 +263,7 @@ void VulkanRenderer::resize(int width,int height) { glfwSetWindowSize(window,wid
 void VulkanRenderer::finish() {
     check(vkDeviceWaitIdle(device),"Wait shutdown");
     std::cout << "Mesh uploads: " << uploadedMeshes << "; resident meshes: " << gpuMeshes.size() << '\n';
+    std::cout << "Texture uploads: " << uploadedTextures << "; resident textures: " << gpuTextures.size() << '\n';
     std::cout << "Validation errors: " << validationErrors << '\n';
     if(validationErrors) throw std::runtime_error("Vulkan validation reported errors");
 }
@@ -320,6 +322,7 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
     int w,h; glfwGetFramebufferSize(window,&w,&h);
     if(w==0 || h==0 || uint32_t(w)!=extent.width || uint32_t(h)!=extent.height) { rebuild(); return; }
     synchronizeMeshes(frame);
+    synchronizeTextures(frame);
     uint32_t index;
     VkResult result=vkAcquireNextImageKHR(device,swapchain,UINT64_MAX,acquired,VK_NULL_HANDLE,&index);
     if(result==VK_ERROR_OUT_OF_DATE_KHR) { rebuild(); return; }
@@ -341,16 +344,19 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
     vkCmdSetViewport(command,0,1,&viewport); vkCmdSetScissor(command,0,1,&scissor);
     Push push{};
     push.vp=frame.camera.viewProjection(float(extent.width)/float(extent.height));
-    push.eye=glm::vec4(frame.camera.position,1);
+    push.eyeUvU=glm::vec4(frame.camera.position,1);
     for(const auto& object:frame.objects) {
-        push.positionTime=glm::vec4(object.transform.position,frame.time);
+        push.positionUvV=glm::vec4(object.transform.position,object.material.uvScale.y);
         push.scaleGlow=glm::vec4(object.transform.scale,object.material.emission);
+        push.eyeUvU.w=object.material.uvScale.x;
         push.color=glm::vec4(object.material.color,object.transform.yaw);
         vkCmdPushConstants(command,layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(Push),&push);
         const auto& mesh=gpuMeshes.at(object.mesh.get());
         VkDeviceSize offset=0;
         vkCmdBindVertexBuffers(command,0,1,&mesh.buffer,&offset);
         vkCmdBindIndexBuffer(command,mesh.buffer,mesh.indexOffset,VK_INDEX_TYPE_UINT32);
+        const auto& texture=gpuTextures.at(object.texture.get());
+        vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_GRAPHICS,layout,0,1,&texture.descriptor,0,nullptr);
         vkCmdDrawIndexed(command,mesh.indexCount,1,0,0,0);
     }
     vkCmdEndRendering(command);
@@ -369,7 +375,12 @@ void VulkanRenderer::cleanup() {
         vkDeviceWaitIdle(device); destroySwapchain();
         for(auto& [key,mesh]:gpuMeshes) { (void)key; releaseMesh(mesh); }
         gpuMeshes.clear();
+        for(auto& [key,texture]:gpuTextures) { (void)key; releaseTexture(texture); }
+        gpuTextures.clear();
+        if(texturePool) vkDestroyDescriptorPool(device,texturePool,nullptr);
+        if(textureSampler) vkDestroySampler(device,textureSampler,nullptr);
         if(layout) vkDestroyPipelineLayout(device,layout,nullptr);
+        if(textureLayout) vkDestroyDescriptorSetLayout(device,textureLayout,nullptr);
         if(fence) vkDestroyFence(device,fence,nullptr);
         if(acquired) vkDestroySemaphore(device,acquired,nullptr);
         if(pool) vkDestroyCommandPool(device,pool,nullptr);

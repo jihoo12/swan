@@ -14,6 +14,7 @@ EntityId Scene::create(Entity entity) {
         throw std::invalid_argument("Invalid entity rotation");
     if(!meshAssets.contains(entity.meshId)) throw std::invalid_argument("Unsupported mesh asset: "+entity.meshId);
     if(!materialAssets.contains(entity.materialId)) throw std::invalid_argument("Unknown material asset: "+entity.materialId);
+    if(!textureAssets.contains(materialAssets.get(entity.materialId).textureId)) throw std::invalid_argument("Unknown material texture asset");
     if(entity.animation) {
         const auto& a=*entity.animation;
         if(!std::isfinite(a.baseHeight) || !std::isfinite(a.phase) || !std::isfinite(a.bob) || !std::isfinite(a.speed) || a.bob<0)
