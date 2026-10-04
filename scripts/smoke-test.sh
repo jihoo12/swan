@@ -110,3 +110,4 @@ scene = json.loads(Path(sys.argv[1]).read_text())
 entity = next(entity for entity in scene['entities'] if entity['id'] == 'pedestal')
 assert all(abs(a-b) < 1e-6 for a, b in zip(entity['transform']['position'], [2, 0.3, 0]))
 PY
+timeout 60s "$binary" --x11 --validation --editor --scene assets/scenes/gltf-garden.swan.json --frames 90 --resize-test

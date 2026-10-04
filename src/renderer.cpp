@@ -1,5 +1,7 @@
 #include "renderer.hpp"
 #include "key_bindings.hpp"
+#include <imgui.h>
+#include <imgui_impl_vulkan.h>
 #include "visibility.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -47,11 +49,12 @@ void VulkanRenderer::initialize() {
             if(e.captured) { e.captured=false; glfwSetInputMode(w,GLFW_CURSOR,GLFW_CURSOR_NORMAL); }
             else glfwSetWindowShouldClose(w,GLFW_TRUE);
         }
+        if(e.guiContext && ImGui::GetIO().WantCaptureKeyboard) return;
         applyActionKey(e.input,key,action,modifiers);
     });
     glfwSetMouseButtonCallback(window,[](GLFWwindow* w,int button,int action,int){
         auto& e=*static_cast<VulkanRenderer*>(glfwGetWindowUserPointer(w));
-        if(button==GLFW_MOUSE_BUTTON_LEFT && action==GLFW_PRESS) {
+        if(button==(e.options.editor?GLFW_MOUSE_BUTTON_RIGHT:GLFW_MOUSE_BUTTON_LEFT) && action==GLFW_PRESS && (!e.guiContext || !ImGui::GetIO().WantCaptureMouse)) {
             e.captured=true; glfwGetCursorPos(w,&e.lastX,&e.lastY); glfwSetInputMode(w,GLFW_CURSOR,GLFW_CURSOR_DISABLED);
         }
     });
@@ -69,7 +72,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,13,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,14,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -109,8 +112,8 @@ void VulkanRenderer::initialize() {
     float priority=1;
     VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO}; qi.queueFamilyIndex=family; qi.queueCount=1; qi.pQueuePriorities=&priority;
     VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES}; f13.dynamicRendering=true;
-    const char* deviceExtension=VK_KHR_SWAPCHAIN_EXTENSION_NAME;
-    VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO}; di.pNext=&f13; di.queueCreateInfoCount=1; di.pQueueCreateInfos=&qi; di.enabledExtensionCount=1; di.ppEnabledExtensionNames=&deviceExtension;
+    const char* deviceExtensions[]={VK_KHR_SWAPCHAIN_EXTENSION_NAME,VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};
+    VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO}; di.pNext=&f13; di.queueCreateInfoCount=1; di.pQueueCreateInfos=&qi; di.enabledExtensionCount=options.editor?2:1; di.ppEnabledExtensionNames=deviceExtensions;
     check(vkCreateDevice(gpu,&di,nullptr,&device),"Create device"); vkGetDeviceQueue(device,family,0,&queue);
     for(auto candidate:{VK_FORMAT_D32_SFLOAT,VK_FORMAT_D24_UNORM_S8_UINT,VK_FORMAT_D16_UNORM}) {
         VkFormatProperties p; vkGetPhysicalDeviceFormatProperties(gpu,candidate,&p);
@@ -130,6 +133,7 @@ void VulkanRenderer::initialize() {
         options.shaderDir=(!ec && std::filesystem::exists(installed))?installed:std::filesystem::path(SWAN_SHADER_DIR);
     }
     createDescriptors(); createSwapchain(); createPipeline();
+    if(options.editor) initializeGui();
 
 }
 uint32_t VulkanRenderer::memoryType(uint32_t mask,VkMemoryPropertyFlags flags) {
@@ -235,7 +239,9 @@ void VulkanRenderer::rebuild() {
     int w=0,h=0; glfwGetFramebufferSize(window,&w,&h);
     while((w==0 || h==0) && !glfwWindowShouldClose(window)) { glfwWaitEvents(); glfwGetFramebufferSize(window,&w,&h); }
     if(glfwWindowShouldClose(window)) return;
-    check(vkDeviceWaitIdle(device),"Wait before resize"); destroySwapchain(); createSwapchain(); createPipeline();
+    check(vkDeviceWaitIdle(device),"Wait before resize"); if(guiVulkan) {ImGui_ImplVulkan_Shutdown();guiVulkan=false;}
+    destroySwapchain(); createSwapchain(); createPipeline();
+    if(guiContext) initializeGuiVulkan();
 }
 Input VulkanRenderer::pollInput() {
     glfwPollEvents();
@@ -251,6 +257,10 @@ Input VulkanRenderer::pollInput() {
     input.sprint=pressed(GLFW_KEY_LEFT_SHIFT);
     Input result=input;
     input.look={}; input.jump=false; input.pause=false; input.reset=false; input.toggleFlight=false; input.interact=false; input.reload=false; input.save=false; input.toggleCamera=false;
+    if(guiContext) {
+        if(ImGui::GetIO().WantCaptureKeyboard) {result.move={};result.vertical=0;result.sprint=false;result.jump=false;result.pause=false;result.reset=false;result.toggleFlight=false;result.toggleCamera=false;result.interact=false;result.reload=false;result.save=false;}
+        if(ImGui::GetIO().WantCaptureMouse) result.look={};
+    }
     return result;
 }
 bool VulkanRenderer::shouldClose() const { return glfwWindowShouldClose(window); }
@@ -291,6 +301,7 @@ void VulkanRenderer::synchronizeMeshes(const RenderFrame& frame) {
     }
 }
 void VulkanRenderer::draw(const RenderFrame& frame) {
+    if(guiContext) ImGui::Render();
     check(vkWaitForFences(device,1,&fence,true,UINT64_MAX),"Wait frame");
     int w,h; glfwGetFramebufferSize(window,&w,&h);
     if(w==0 || h==0 || uint32_t(w)!=extent.width || uint32_t(h)!=extent.height) { rebuild(); return; }
@@ -337,6 +348,14 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
         vkCmdDrawIndexed(command,mesh.indexCount,1,0,0,0);
     }
     vkCmdEndRendering(command);
+    if(guiVulkan) {
+        auto guiBarrier=barrier(images[index],VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,nullptr,0,nullptr,1,&guiBarrier);
+        color.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;render.pDepthAttachment=nullptr;
+        vkCmdBeginRendering(command,&render);
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),command);
+        vkCmdEndRendering(command);
+    }
     auto presentBarrier=barrier(images[index],VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,0);
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,nullptr,0,nullptr,1,&presentBarrier);
     check(vkEndCommandBuffer(command),"End command");
@@ -350,7 +369,7 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
 }
 void VulkanRenderer::cleanup() {
     if(device) {
-        vkDeviceWaitIdle(device); destroySwapchain();
+        vkDeviceWaitIdle(device); shutdownGui(); destroySwapchain();
         for(auto& [key,mesh]:gpuMeshes) { (void)key; releaseMesh(mesh); }
         gpuMeshes.clear();
         for(auto& [key,texture]:gpuTextures) { (void)key; releaseTexture(texture); }

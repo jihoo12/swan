@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.13 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.14 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -218,3 +218,17 @@ A headless frontend exercises the same command API:
 ```
 
 `swan-scene INPUT OUTPUT EDITS.json` supports `transform` (id, position, scale, yaw), `parent` (id, parent key or null), `delete` (id), `undo`, and `redo`. It validates a batch before saving once; a failed command leaves the output file intact. Edit files are limited to 1 MiB and 256 commands. Material/create commands are available through the CPU API and will be exposed by the GUI inspector. History uses scene snapshots, so large documents have corresponding CPU memory costs; assets are not reread during edit validation.
+
+Version 0.14 adds the first Dear ImGui editor overlay:
+
+```bash
+./build/swan --editor --scene assets/scenes/gltf-garden.swan.json --save-scene /tmp/edited.swan.json
+```
+
+The left panel lists entities with hierarchy indentation, selection, Add cube/Delete, Undo/Redo, save path, source reload, and Play/Stop. The inspector edits local position, scale, and yaw; **Apply transform** commits one validated undoable command. Materials are displayed read-only in this first UI. Save always writes authored data, even during play. Play currently runs the garden game and requires its goal/collectible roles; scenes without those roles remain editable, and Play reports an error. Stop restores the authored preview.
+
+Right-click the scene background to capture mouse look, WASD moves the editor camera, Space/Ctrl changes altitude, and Escape releases the mouse. UI mouse/keyboard capture suppresses camera/game input while interacting with panels. The UI renders through Dear ImGui's GLFW/Vulkan backends as a separate overlay pass; swapchain resize recreates its Vulkan backend after GPU completion. No docking, viewport picking, gizmo, file browser, material editing, or selection outline is included yet.
+
+![Swan's initial GUI editor](docs/editor.png)
+
+Run `nix develop --command bash scripts/editor-ui-test.sh` for a real Xvfb mouse/keyboard test: select an entity, edit a transform, undo/redo, save, and Play/Stop. The test checks saved data and Vulkan validation output.

@@ -1,5 +1,6 @@
 #include "engine.hpp"
 #include "game.hpp"
+#include "editor_layer.hpp"
 #include "scene_io.hpp"
 #include <iostream>
 #include <charconv>
@@ -9,10 +10,11 @@ int main(int argc,char** argv) {
         for(int i=1;i<argc;++i) {
             std::string arg=argv[i];
             if(arg=="--help") {
-                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--validation] [--x11] [--overview] [--third-person] [--no-culling] [--verify-mesh-uploads] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
+                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--editor] [--validation] [--x11] [--overview] [--third-person] [--no-culling] [--verify-mesh-uploads] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
                           << "WASD move | Shift sprint | click to look | Space jump | E collect\nV toggle first/third person | F toggle flight (Space/Ctrl ascend/descend) | P pause | R respawn | F5 reload | F6 save definition | Esc release / quit\n";
                 return 0;
             } else if(arg=="--validation") options.validation=true;
+            else if(arg=="--editor") options.editor=true;
             else if(arg=="--verify-mesh-uploads") options.verifyMeshUploads=true;
             else if(arg=="--no-culling") options.culling=false;
             else if(arg=="--third-person") options.thirdPerson=true;
@@ -30,6 +32,13 @@ int main(int argc,char** argv) {
                 auto [end,ec]=std::from_chars(value.data(),value.data()+value.size(),options.frames);
                 if(ec!=std::errc{} || end!=value.data()+value.size() || options.frames<=0) throw std::runtime_error("--frames requires a positive integer");
             } else throw std::runtime_error("Unknown or incomplete argument: "+arg);
+        }
+        if(options.editor && !options.validateScene && options.exportPath.empty()) {
+            swan::SceneDocument document;
+            if(!options.scenePath.empty()) document=swan::loadScene(options.scenePath);
+            else {auto garden=swan::makeGarden();document={std::move(garden.scene),garden.spawn};}
+            swan::EditorLayer editor(std::move(document),options);
+            swan::Engine engine(options);engine.run(editor);return 0;
         }
         swan::Garden level;
         if(!options.scenePath.empty()) {

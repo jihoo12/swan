@@ -3,6 +3,7 @@
 namespace swan {
 struct Options {
     bool validation=false;
+    bool editor=false;
     bool culling=true;
     bool verifyMeshUploads=false;
     bool x11=false;

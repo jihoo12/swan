@@ -15,6 +15,7 @@ public:
     VulkanRenderer(const VulkanRenderer&) = delete;
     VulkanRenderer& operator=(const VulkanRenderer&) = delete;
     Input pollInput();
+    void beginGui();
     bool shouldClose() const;
     void draw(const RenderFrame& frame);
     void setTitle(const std::string& title);
@@ -22,6 +23,11 @@ public:
     void finish();
 private:
     void initialize();
+    void initializeGui();
+    void initializeGuiVulkan();
+    void shutdownGui();
+    VkDescriptorPool guiPool=VK_NULL_HANDLE;
+    bool guiContext=false,guiGlfw=false,guiVulkan=false;
     void cleanup();
     void createSwapchain();
     void destroySwapchain();

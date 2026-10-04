@@ -7,7 +7,7 @@
       eachSystem = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs { inherit system; }));
       build = pkgs: pkgs.stdenv.mkDerivation {
         pname = "swan";
-        version = "0.13.0";
+        version = "0.14.0";
         src = pkgs.lib.cleanSourceWith {
           src = self;
           filter = path: type:
@@ -16,7 +16,7 @@
               && pkgs.lib.cleanSourceFilter path type;
         };
         nativeBuildInputs = [ pkgs.cmake pkgs.ninja pkgs.pkg-config pkgs.glslang ];
-        buildInputs = [ pkgs.vulkan-loader pkgs.vulkan-headers pkgs.glfw pkgs.glm pkgs.nlohmann_json pkgs.tinyobjloader pkgs.libpng pkgs.assimp ];
+        buildInputs = [ pkgs.vulkan-loader pkgs.vulkan-headers pkgs.glfw pkgs.glm pkgs.nlohmann_json pkgs.tinyobjloader pkgs.libpng pkgs.assimp (pkgs.imgui.override { IMGUI_BUILD_VULKAN_BINDING = true; IMGUI_BUILD_OPENGL3_BINDING = false; }) ];
         cmakeFlags = [ "-DCMAKE_BUILD_TYPE=Release" ];
         doCheck = true;
         meta.mainProgram = "swan";
@@ -27,7 +27,7 @@
       devShells = eachSystem (pkgs: {
         default = pkgs.mkShell {
           inputsFrom = [ (build pkgs) ];
-          packages = [ pkgs.gdb pkgs.vulkan-tools pkgs.vulkan-validation-layers pkgs.xorg-server pkgs.mesa ];
+          packages = [ pkgs.gdb pkgs.xdotool pkgs.vulkan-tools pkgs.vulkan-validation-layers pkgs.xorg-server pkgs.mesa ];
           VK_LAYER_PATH = "${pkgs.vulkan-validation-layers}/share/vulkan/explicit_layer.d";
           SWAN_SOFTWARE_ICD = "${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.${if pkgs.stdenv.hostPlatform.isAarch64 then "aarch64" else "x86_64"}.json";
           shellHook = ''
