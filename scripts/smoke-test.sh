@@ -34,3 +34,9 @@ timeout 60s "$binary" --x11 --validation --frames 90 --resize-test
 timeout 60s "$binary" --x11 --validation --overview --frames 45
 timeout 60s "$binary" --x11 --validation --scene "$work/garden.swan.json" --frames 45
 timeout 60s "$binary" --x11 --validation --scene assets/scenes/playground.swan.json --frames 45
+mesh_scene=assets/scenes/mesh-garden.swan.json
+installed_scene="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/mesh-garden.swan.json"
+if [[ -f "$installed_scene" ]]; then mesh_scene="$installed_scene"; fi
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$mesh_scene" --export-scene "$work/mesh-garden.swan.json"
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/mesh-garden.swan.json"
+timeout 60s "$binary" --x11 --validation --scene "$work/mesh-garden.swan.json" --reload-test --resize-test --frames 90

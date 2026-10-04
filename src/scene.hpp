@@ -31,6 +31,8 @@ public:
     EntityId find(const std::string& key) const;
     MaterialAssets& assets() { return materialAssets; }
     const MaterialAssets& assets() const { return materialAssets; }
+    MeshAssets& meshes() { return meshAssets; }
+    const MeshAssets& meshes() const { return meshAssets; }
     bool destroy(EntityId id);
     Entity* get(EntityId id);
     const Entity* get(EntityId id) const;
@@ -43,5 +45,6 @@ private:
     size_t liveCount=0;
     uint64_t serial=0;
     MaterialAssets materialAssets;
+    MeshAssets meshAssets;
 };
 }

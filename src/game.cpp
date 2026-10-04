@@ -112,7 +112,7 @@ RenderFrame Game::renderFrame(float interpolation) const {
     frame.objects.reserve(garden.scene.size());
     for(auto id:garden.scene.entities()) {
         const auto* entity=garden.scene.get(id);
-        frame.objects.push_back({entity->transform,garden.scene.assets().get(entity->materialId)});
+        frame.objects.push_back({entity->transform,garden.scene.assets().get(entity->materialId),garden.scene.meshes().get(entity->meshId).data});
     }
     return frame;
 }

@@ -16,6 +16,7 @@ void Engine::run(GameLayer& game) {
         if(renderer.shouldClose()) break;
         auto now=std::chrono::steady_clock::now();
         double elapsed=std::chrono::duration<double>(now-previous).count(); previous=now;
+        if(options.reloadTest && (frames==10 || frames==30)) input.reload=true;
         game.handleInput(input);
         clock.advance(elapsed,[&](float dt){game.fixedUpdate(dt,input);});
         renderer.draw(game.renderFrame(float(clock.remainder()/FixedStep::interval)));

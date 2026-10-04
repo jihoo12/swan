@@ -46,7 +46,12 @@ MotionResult moveCapsule(const Scene& scene,glm::vec3 feet,glm::vec3 displacemen
             for(auto id:ids) {
                 const auto* entity=scene.get(id);
                 if(!entity->solid) continue;
-                auto contact=capsuleBox(result.feet,radius,height,entity->transform);
+                const auto& mesh=*scene.meshes().get(entity->meshId).data;
+                Transform proxy=entity->transform;
+                auto center=(mesh.minimum+mesh.maximum)*0.5f;
+                proxy.position+=rotate(center*proxy.scale,proxy.yaw);
+                proxy.scale*=(mesh.maximum-mesh.minimum);
+                auto contact=capsuleBox(result.feet,radius,height,proxy);
                 if(contact.depth<=0) continue;
                 result.feet+=contact.normal*(contact.depth+0.00001f);
                 if(contact.normal.y>0.5f) result.grounded=true;

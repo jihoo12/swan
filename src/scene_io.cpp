@@ -31,12 +31,12 @@ glm::vec3 vector(const Json& value) {
 }
 Json vector(glm::vec3 value) { return Json::array({value.x,value.y,value.z}); }
 }
-SceneDocument parseScene(std::string_view text) {
+SceneDocument parseScene(std::string_view text,const std::filesystem::path& baseDirectory) {
     if(text.size()>maxBytes) throw std::invalid_argument("Scene file exceeds 16 MiB");
     try {
         const auto root=Json::parse(text);
-        keys(root,{"format","version","spawn","materials","entities"});
-        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || root.at("version")!=1)
+        keys(root,{"format","version","spawn","materials","meshes","entities"});
+        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || (root.at("version")!=1 && root.at("version")!=2))
             throw std::invalid_argument("Unsupported scene format/version");
         SceneDocument document;
         document.spawn=vector(root.at("spawn"));
@@ -45,6 +45,18 @@ SceneDocument parseScene(std::string_view text) {
         for(auto it=materials.begin();it!=materials.end();++it) {
             keys(it.value(),{"color","emission"});
             document.scene.assets().set(it.key(),{vector(it.value().at("color")),number(it.value().at("emission"))});
+        }
+        if(root.contains("meshes")) {
+            if(root.at("version")==1) throw std::invalid_argument("Mesh assets require scene version 2");
+            const auto& meshes=root.at("meshes");
+            if(!meshes.is_object()) throw std::invalid_argument("Meshes must be an object");
+            auto base=baseDirectory.empty()?std::filesystem::current_path():baseDirectory;
+            for(auto it=meshes.begin();it!=meshes.end();++it) {
+                keys(it.value(),{"source"});
+                auto source=it.value().at("source").get<std::string>();
+                if(source.empty()) throw std::invalid_argument("Mesh source cannot be empty");
+                document.scene.meshes().load(it.key(),base/std::filesystem::path(source));
+            }
         }
         const auto& entities=root.at("entities");
         if(!entities.is_array() || entities.size()>maxEntities) throw std::invalid_argument("Expected an entity array with at most 10000 entries");
@@ -71,11 +83,17 @@ SceneDocument parseScene(std::string_view text) {
         return document;
     } catch(const std::exception& e) { throw std::invalid_argument(std::string("Invalid Swan scene: ")+e.what()); }
 }
-std::string serializeScene(const SceneDocument& document) {
-    Json root={{"format","swan-scene"},{"version",1},{"spawn",vector(document.spawn)},
-               {"materials",Json::object()},{"entities",Json::array()}};
+std::string serializeScene(const SceneDocument& document,const std::filesystem::path& baseDirectory) {
+    Json root={{"format","swan-scene"},{"version",2},{"spawn",vector(document.spawn)},
+               {"materials",Json::object()},{"meshes",Json::object()},{"entities",Json::array()}};
     for(const auto& [id,material]:document.scene.assets().entries())
         root["materials"][id]={{"color",vector(material.color)},{"emission",material.emission}};
+    auto base=baseDirectory.empty()?std::filesystem::current_path():std::filesystem::absolute(baseDirectory);
+    for(const auto& [id,mesh]:document.scene.meshes().entries()) if(!mesh.source.empty()) {
+        std::error_code error;
+        auto relative=std::filesystem::relative(mesh.source,base,error);
+        root["meshes"][id]={{"source",(error?mesh.source:relative).generic_string()}};
+    }
     for(auto id:document.scene.entities()) {
         const auto& e=*document.scene.get(id);
         Json entity={{"id",e.key},{"name",e.name},{"mesh",e.meshId},{"material",e.materialId},
@@ -89,7 +107,7 @@ std::string serializeScene(const SceneDocument& document) {
     }
     // Scene entities are mutable at runtime. Revalidate before touching any file.
     auto text=root.dump(2)+"\n";
-    parseScene(text);
+    parseScene(text,baseDirectory);
     return text;
 }
 SceneDocument loadScene(const std::filesystem::path& path) {
@@ -100,11 +118,11 @@ SceneDocument loadScene(const std::filesystem::path& path) {
         if(size<0 || size>static_cast<std::streamoff>(maxBytes)) throw std::runtime_error("Scene file exceeds 16 MiB or cannot be sized");
         std::string text(static_cast<size_t>(size),'\0'); input.seekg(0); input.read(text.data(),size);
         if(!input) throw std::runtime_error("Cannot read scene file");
-        return parseScene(text);
+        return parseScene(text,std::filesystem::absolute(path).parent_path());
     } catch(const std::exception& e) { throw std::runtime_error(path.string()+": "+e.what()); }
 }
 void saveScene(const std::filesystem::path& path,const SceneDocument& document) {
-    auto text=serializeScene(document);
+    auto text=serializeScene(document,std::filesystem::absolute(path).parent_path());
     std::string pattern=path.string()+".tmp-XXXXXX";
     std::vector<char> name(pattern.begin(),pattern.end()); name.push_back('\0');
     int descriptor=mkstemp(name.data());

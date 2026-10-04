@@ -6,6 +6,7 @@
 #include "options.hpp"
 #include <filesystem>
 #include <string>
+#include <map>
 namespace swan {
 class VulkanRenderer {
 public:
@@ -26,6 +27,18 @@ private:
     void destroySwapchain();
     void createPipeline();
     void rebuild();
+    struct GpuMesh {
+        SharedMesh owner;
+        VkBuffer buffer=VK_NULL_HANDLE;
+        VkDeviceMemory memory=VK_NULL_HANDLE;
+        VkDeviceSize indexOffset=0;
+        uint32_t indexCount=0;
+    };
+    GpuMesh uploadMesh(SharedMesh mesh);
+    void releaseMesh(GpuMesh& mesh);
+    void synchronizeMeshes(const RenderFrame& frame);
+    std::map<const MeshData*,GpuMesh> gpuMeshes;
+    size_t uploadedMeshes=0;
     uint32_t memoryType(uint32_t mask,VkMemoryPropertyFlags flags);
     VkShaderModule shader(const char* name);
     Options options;

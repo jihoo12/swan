@@ -12,7 +12,7 @@ EntityId Scene::create(Entity entity) {
     }
     if(!std::isfinite(t.yaw))
         throw std::invalid_argument("Invalid entity rotation");
-    if(entity.meshId!="builtin:cube") throw std::invalid_argument("Unsupported mesh asset: "+entity.meshId);
+    if(!meshAssets.contains(entity.meshId)) throw std::invalid_argument("Unsupported mesh asset: "+entity.meshId);
     if(!materialAssets.contains(entity.materialId)) throw std::invalid_argument("Unknown material asset: "+entity.materialId);
     if(entity.animation) {
         const auto& a=*entity.animation;

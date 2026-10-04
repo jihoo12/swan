@@ -9,12 +9,13 @@ int main(int argc,char** argv) {
         for(int i=1;i<argc;++i) {
             std::string arg=argv[i];
             if(arg=="--help") {
-                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--validation] [--x11] [--overview] [--frames N] [--resize-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
+                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--validation] [--x11] [--overview] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
                           << "WASD move | Shift sprint | click to look | Space jump | E collect\nF toggle flight (Space/Ctrl ascend/descend) | P pause | R respawn | F5 reload | F6 save definition | Esc release / quit\n";
                 return 0;
             } else if(arg=="--validation") options.validation=true;
             else if(arg=="--overview") options.overview=true;
             else if(arg=="--x11") options.x11=true;
+            else if(arg=="--reload-test") options.reloadTest=true;
             else if(arg=="--resize-test") options.resizeTest=true;
             else if(arg=="--scene" && i+1<argc) options.scenePath=argv[++i];
             else if(arg=="--save-scene" && i+1<argc) options.savePath=argv[++i];
@@ -34,7 +35,8 @@ int main(int argc,char** argv) {
         } else level=swan::makeGarden();
         if(options.validateScene) {
             std::cout << "Valid scene: " << level.scene.size() << " entities, "
-                      << level.scene.assets().entries().size() << " materials\n";
+                      << level.scene.assets().entries().size() << " materials, "
+                      << level.scene.meshes().entries().size() << " mesh assets\n";
             return 0;
         }
         if(!options.exportPath.empty()) {

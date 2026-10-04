@@ -5,6 +5,8 @@
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <set>
+#include <cstddef>
 #include <stdexcept>
 namespace swan {
 namespace {
@@ -71,7 +73,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,3,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,4,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -194,7 +196,13 @@ void VulkanRenderer::createPipeline() {
         VkPipelineShaderStageCreateInfo stages[2]{};
         stages[0]={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_VERTEX_BIT,vert,"main",nullptr};
         stages[1]={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_FRAGMENT_BIT,frag,"main",nullptr};
+        static_assert(sizeof(Vertex)==24 && offsetof(Vertex,normal)==12);
+        VkVertexInputBindingDescription binding{0,sizeof(Vertex),VK_VERTEX_INPUT_RATE_VERTEX};
+        VkVertexInputAttributeDescription attributes[2]={{0,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,position)},
+                                                       {1,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,normal)}};
         VkPipelineVertexInputStateCreateInfo vertex{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
+        vertex.vertexBindingDescriptionCount=1; vertex.pVertexBindingDescriptions=&binding;
+        vertex.vertexAttributeDescriptionCount=2; vertex.pVertexAttributeDescriptions=attributes;
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO}; assembly.topology=VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO}; viewport.viewportCount=1; viewport.scissorCount=1;
         VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO}; raster.polygonMode=VK_POLYGON_MODE_FILL; raster.cullMode=VK_CULL_MODE_NONE; raster.frontFace=VK_FRONT_FACE_COUNTER_CLOCKWISE; raster.lineWidth=1;
@@ -253,13 +261,65 @@ void VulkanRenderer::setTitle(const std::string& title) { glfwSetWindowTitle(win
 void VulkanRenderer::resize(int width,int height) { glfwSetWindowSize(window,width,height); }
 void VulkanRenderer::finish() {
     check(vkDeviceWaitIdle(device),"Wait shutdown");
+    std::cout << "Mesh uploads: " << uploadedMeshes << "; resident meshes: " << gpuMeshes.size() << '\n';
     std::cout << "Validation errors: " << validationErrors << '\n';
     if(validationErrors) throw std::runtime_error("Vulkan validation reported errors");
+}
+VulkanRenderer::GpuMesh VulkanRenderer::uploadMesh(SharedMesh data) {
+    if(!data || data->vertices.empty() || data->indices.empty()) throw std::invalid_argument("Cannot upload an empty mesh");
+    GpuMesh mesh; mesh.owner=std::move(data);
+    mesh.indexOffset=mesh.owner->vertices.size()*sizeof(Vertex);
+    mesh.indexCount=uint32_t(mesh.owner->indices.size());
+    try {
+        VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+        info.size=mesh.indexOffset+mesh.owner->indices.size()*sizeof(uint32_t);
+        info.usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        info.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
+        check(vkCreateBuffer(device,&info,nullptr,&mesh.buffer),"Create mesh buffer");
+        VkMemoryRequirements requirements; vkGetBufferMemoryRequirements(device,mesh.buffer,&requirements);
+        VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+        allocation.allocationSize=requirements.size;
+        allocation.memoryTypeIndex=memoryType(requirements.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+        check(vkAllocateMemory(device,&allocation,nullptr,&mesh.memory),"Allocate mesh memory");
+        check(vkBindBufferMemory(device,mesh.buffer,mesh.memory,0),"Bind mesh memory");
+        void* mapped=nullptr;
+        check(vkMapMemory(device,mesh.memory,0,VK_WHOLE_SIZE,0,&mapped),"Map mesh memory");
+        std::memcpy(mapped,mesh.owner->vertices.data(),size_t(mesh.indexOffset));
+        std::memcpy(static_cast<char*>(mapped)+mesh.indexOffset,mesh.owner->indices.data(),mesh.owner->indices.size()*sizeof(uint32_t));
+        VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
+        range.memory=mesh.memory; range.offset=0; range.size=VK_WHOLE_SIZE;
+        auto result=vkFlushMappedMemoryRanges(device,1,&range);
+        vkUnmapMemory(device,mesh.memory); check(result,"Flush mesh memory");
+    } catch(...) { releaseMesh(mesh); throw; }
+    return mesh;
+}
+void VulkanRenderer::releaseMesh(GpuMesh& mesh) {
+    if(mesh.buffer) vkDestroyBuffer(device,mesh.buffer,nullptr);
+    if(mesh.memory) vkFreeMemory(device,mesh.memory,nullptr);
+    mesh.buffer=VK_NULL_HANDLE; mesh.memory=VK_NULL_HANDLE;
+}
+void VulkanRenderer::synchronizeMeshes(const RenderFrame& frame) {
+    // Called only after the frame fence: no old buffers remain in GPU use.
+    std::set<const MeshData*> needed;
+    for(const auto& object:frame.objects) {
+        if(!object.mesh) throw std::invalid_argument("Render object has no mesh");
+        needed.insert(object.mesh.get());
+    }
+    for(auto it=gpuMeshes.begin();it!=gpuMeshes.end();) {
+        if(!needed.contains(it->first)) { releaseMesh(it->second); it=gpuMeshes.erase(it); }
+        else ++it;
+    }
+    for(const auto& object:frame.objects) if(!gpuMeshes.contains(object.mesh.get())) {
+        auto mesh=uploadMesh(object.mesh);
+        try { gpuMeshes.emplace(object.mesh.get(),mesh); ++uploadedMeshes; }
+        catch(...) { releaseMesh(mesh); throw; }
+    }
 }
 void VulkanRenderer::draw(const RenderFrame& frame) {
     check(vkWaitForFences(device,1,&fence,true,UINT64_MAX),"Wait frame");
     int w,h; glfwGetFramebufferSize(window,&w,&h);
     if(w==0 || h==0 || uint32_t(w)!=extent.width || uint32_t(h)!=extent.height) { rebuild(); return; }
+    synchronizeMeshes(frame);
     uint32_t index;
     VkResult result=vkAcquireNextImageKHR(device,swapchain,UINT64_MAX,acquired,VK_NULL_HANDLE,&index);
     if(result==VK_ERROR_OUT_OF_DATE_KHR) { rebuild(); return; }
@@ -287,7 +347,11 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
         push.scaleGlow=glm::vec4(object.transform.scale,object.material.emission);
         push.color=glm::vec4(object.material.color,object.transform.yaw);
         vkCmdPushConstants(command,layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(Push),&push);
-        vkCmdDraw(command,36,1,0,0);
+        const auto& mesh=gpuMeshes.at(object.mesh.get());
+        VkDeviceSize offset=0;
+        vkCmdBindVertexBuffers(command,0,1,&mesh.buffer,&offset);
+        vkCmdBindIndexBuffer(command,mesh.buffer,mesh.indexOffset,VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(command,mesh.indexCount,1,0,0,0);
     }
     vkCmdEndRendering(command);
     auto presentBarrier=barrier(images[index],VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,0);
@@ -303,6 +367,8 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
 void VulkanRenderer::cleanup() {
     if(device) {
         vkDeviceWaitIdle(device); destroySwapchain();
+        for(auto& [key,mesh]:gpuMeshes) { (void)key; releaseMesh(mesh); }
+        gpuMeshes.clear();
         if(layout) vkDestroyPipelineLayout(device,layout,nullptr);
         if(fence) vkDestroyFence(device,fence,nullptr);
         if(acquired) vkDestroySemaphore(device,acquired,nullptr);

@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.3 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can now be exported, validated, loaded from JSON, and reloaded while the game runs. No external art assets are needed.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.4 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes are imported as shared CPU assets and rendered using cached Vulkan vertex/index buffers. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -38,6 +38,7 @@ SPIR-V shaders are installed alongside the executable. Shader lookup uses the in
 
 ```sh
 ./build/swan --scene assets/scenes/playground.swan.json
+./build/swan --scene assets/scenes/mesh-garden.swan.json
 ./build/swan --export-scene /tmp/garden.swan.json
 ./build/swan --validate-scene /tmp/garden.swan.json
 ./build/swan --scene /tmp/garden.swan.json --save-scene /tmp/garden-copy.swan.json
@@ -45,7 +46,9 @@ SPIR-V shaders are installed alongside the executable. Shader lookup uses the in
 
 Export and validation commands run without initializing GLFW or Vulkan. Edit a loaded scene in your text editor and press F5 to reload it. Failed reloads leave the active game intact. F6 writes the loaded authored definition to the explicit `--save-scene` path; this exports a world, rather than saving player progress or live animation. Successful reload resets progress and respawns at the scene's spawn position.
 
-The versioned JSON format preserves stable entity IDs, transforms, material references, collision/interaction flags, and animation settings. A scene owns a named material asset library; entities share these material definitions. The hand-editable playground demonstrates shared materials and three collectibles. See [the scene format and editing guide](assets/README.md) for field details and validation rules. Mesh assets currently support `builtin:cube` only.
+The versioned JSON format preserves stable entity IDs, transforms, material references, collision/interaction flags, and animation settings. A scene owns a named material asset library; entities share these material definitions. The hand-editable playground demonstrates shared materials and three collectibles. See [the scene format and editing guide](assets/README.md) for field details and validation rules. [See the imported-mesh example](docs/mesh-garden.png).
+
+Version 2 adds named OBJ mesh assets; version 1 scene files remain readable. Exporters write version 2 and rebase mesh paths relative to the destination scene file. External OBJ files remain separate assets, so keep them available after exporting.
 
 ## Controls
 
@@ -70,13 +73,13 @@ Losing focus releases the mouse and clears held movement. Walking uses gravity, 
 
 | CMake target | Responsibility |
 | --- | --- |
-| `swan_core` | Scene storage, entity lifetime, named material assets, JSON persistence, static collision |
+| `swan_core` | Scene storage, entity lifetime, named material/mesh assets, OBJ import, JSON persistence, static collision |
 | `swan_renderer` | GLFW input/window, Vulkan resources, render snapshots |
 | `swan_runtime` | Main loop, fixed simulation updates, render scheduling |
 | `swan_demo` | Procedural garden and sample gameplay |
 | `swan` | Command-line startup and game/runtime composition |
 
-The core and demo depend on GLM and the core uses nlohmann/json for persistence, with no GLFW or Vulkan dependency. CPU tests exercise gameplay without creating a window or device.
+The core and demo depend on GLM and the core uses nlohmann/json for persistence and tinyobjloader for OBJ import, with no GLFW or Vulkan dependency. CPU tests exercise gameplay without creating a window or device.
 
 The engine receives a `GameLayer` from the application. Each display frame samples held input and one-shot actions, applies game actions once, runs simulation updates at **120 Hz**, and renders a `RenderFrame` containing a camera and render objects. Camera position is interpolated between simulation updates. Frame delays are capped at 250 ms and 30 simulation steps to bound catch-up after a stall.
 
@@ -93,14 +96,17 @@ To implement another game, derive from `GameLayer` and implement `handleInput`, 
 ## Rendering and collision
 
 - Vulkan 1.3 dynamic rendering, perspective projection, depth testing, FIFO presentation.
-- Per-object yaw, scale, position, and procedural cube geometry generated in the vertex shader.
+- Per-object yaw, scale, and position; indexed built-in cube and imported triangle meshes.
+- Correct inverse-scale normal transformation for nonuniform object scaling.
+- Shared immutable CPU meshes and a GPU buffer cache keyed by resource identity; aliases share one upload. Unused buffers are released after the frame fence before recording the next frame.
+- Mesh upload currently uses host-visible memory with explicit flushing. Device-local staging and streaming are future optimizations.
 - Directional sunlight, cyan local lighting, emissive materials, distance fog, and tone mapping.
 - Swapchain/depth recreation on resize and waiting while minimized.
 - One frame in flight, one frame fence, one acquire semaphore, and a presentation semaphore per swapchain image; shared depth use remains serialized.
 - Optional Khronos validation with runtime errors producing a nonzero exit status.
-- Upright capsule against static boxes rotated around the vertical axis. Movement is subdivided and contacts iteratively resolved, including floor, ceiling, and wall sliding.
+- Upright capsule against static boxes rotated around the vertical axis. Movement is subdivided and contacts iteratively resolved, including floor, ceiling, and wall sliding. Imported meshes use a box proxy derived from their local bounds, transformed by the entity scale and yaw.
 
-This is an early engine foundation. Collision is a character controller, not a general rigid-body simulator; it has no dynamic bodies, arbitrary mesh collision, or automatic stair climbing. Geometry is still procedural boxes. There is no mesh/texture import, audio, GUI editor, shadow mapping, or bloom yet. The crystal's emission changes its surface color without a bloom pass. These systems can be added on top of the existing scene/game/renderer boundaries.
+This is an early engine foundation. Collision is a character controller, not a general rigid-body simulator; it has no dynamic bodies, arbitrary mesh collision, or automatic stair climbing. OBJ import currently requires triangles and supports positions plus optional normals. Missing normals use flat shading; UVs, vertex colors, smoothing groups, and OBJ/MTL materials do not affect rendering. There is no texture import, glTF, skeletal animation, audio, GUI editor, shadow mapping, or bloom yet. The crystal's emission changes its surface color without a bloom pass. These systems can be added on top of the existing scene/game/renderer boundaries.
 
 ## Verification
 
@@ -118,21 +124,21 @@ For automated rendering without a desktop or hardware GPU:
 nix develop path:. --command bash scripts/smoke-test.sh
 ```
 
-The smoke test first exports and validates a scene without a window, then uses Xvfb and Mesa Lavapipe, enables synchronization validation, renders 90 frames, and resizes the window twice. It checks walking, overview, exported-scene, and hand-authored example modes. To test installed shader lookup too:
+The smoke test first exports and validates a scene without a window, then uses Xvfb and Mesa Lavapipe, enables synchronization validation, renders 90 frames, and resizes the window twice. It checks walking, overview, exported-scene, hand-authored example, and imported-mesh modes. The mesh case reloads and resizes twice to exercise GPU resource replacement, and exports/validates relative mesh paths. The console reports uploads and resident GPU meshes. To test installed shader lookup too:
 
 ```sh
 nix build path:.
 nix develop path:. --command bash scripts/smoke-test.sh ./result/bin/swan
 ```
 
-CPU tests cover entity deletion/reuse and invalid creation, procedural scene invariants, capsule floor/wall/ceiling contacts and rotated walls, equivalent movement at 60/144 display frames per second, jump/landing, pause, collection/completion, mode switching, and bounded simulation catch-up. Persistence tests cover deterministic round trips, schema/asset errors, invalid-save preservation, authored exports after gameplay, and failed/successful reloads. The bundled example also has a headless command-line validation test. The tests use explicit checks in release builds.
+CPU tests cover entity deletion/reuse and invalid creation, procedural scene invariants, capsule floor/wall/ceiling contacts and rotated walls, equivalent movement at 60/144 display frames per second, jump/landing, pause, collection/completion, mode switching, and bounded simulation catch-up. Persistence tests cover deterministic round trips, schema/asset errors, invalid-save preservation, authored exports after gameplay, and failed/successful reloads. Mesh tests cover OBJ index validation, supplied/generated normals, vertex sharing, negative indices, degenerate/untriangulated faces, path rebasing, failed reloads, and collision bounds. Both bundled examples have headless command-line validation tests. The tests use explicit checks in release builds.
 
 ```sh
 nix flake check path:.
 ./build/swan --help
 ```
 
-`nix flake check` builds the package and runs three CPU test executables. Graphical smoke tests are separate.
+`nix flake check` builds the package and runs four CPU test executables and two headless example validation tests. Graphical smoke tests are separate.
 
 ## Layout
 
@@ -143,7 +149,8 @@ nix flake check path:.
 | `src/engine.*`, `src/fixed_step.hpp` | Runtime orchestration and simulation clock |
 | `src/game_layer.hpp`, `src/input.hpp`, `src/render_frame.hpp` | Game/runtime/renderer interfaces |
 | `src/scene.*`, `src/camera.hpp` | Entity storage and camera math |
-| `src/assets.*`, `src/scene_io.*` | Named material assets and versioned JSON scene IO |
+| `src/assets.*`, `src/scene_io.*` | Named material/mesh assets and versioned JSON scene IO |
+| `src/mesh.*`, `assets/meshes/` | Indexed cube, triangle OBJ importer, authored crystal model |
 | `assets/scenes/`, `assets/README.md` | Hand-editable example and scene format guide |
 | `src/physics.*` | Character capsule against static boxes |
 | `src/game.*`, `src/garden.*` | Sample gameplay and procedural content |
@@ -157,7 +164,7 @@ nix flake check path:.
 
 ## References
 
-[Khronos Vulkan tutorial](https://docs.vulkan.org/tutorial/latest/01_Overview.html), [depth buffering](https://docs.vulkan.org/tutorial/latest/07_Depth_buffering.html), and [rendering and presentation](https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/03_Drawing/02_Rendering_and_presentation.html).
+[Khronos Vulkan tutorial](https://docs.vulkan.org/tutorial/latest/01_Overview.html), [depth buffering](https://docs.vulkan.org/tutorial/latest/07_Depth_buffering.html), [rendering and presentation](https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/03_Drawing/02_Rendering_and_presentation.html), [vertex input](https://docs.vulkan.org/tutorial/latest/04_Vertex_buffers/00_Vertex_input_description.html), [index buffers](https://docs.vulkan.org/tutorial/latest/04_Vertex_buffers/03_Index_buffer.html), and [tinyobjloader](https://github.com/tinyobjloader/tinyobjloader).
 
 ## License
 

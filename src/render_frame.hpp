@@ -4,6 +4,6 @@
 #include <vector>
 namespace swan {
 // Immutable snapshot: the GPU layer never owns or modifies gameplay entities.
-struct RenderObject { Transform transform; Material material; };
+struct RenderObject { Transform transform; Material material; SharedMesh mesh=cubeMesh(); };
 struct RenderFrame { Camera camera; std::vector<RenderObject> objects; float time=0; };
 }
