@@ -10,7 +10,10 @@ struct CreateMaterial { std::string id; Material value; };
 struct SetParent { std::string key; std::optional<std::string> parent; };
 struct CreateEntity { Entity value; std::optional<std::string> parent; };
 struct DeleteEntity { std::string key; };
-using SceneEdit=std::variant<SetTransform,SetEntityProperties,SetMaterial,CreateMaterial,SetParent,CreateEntity,DeleteEntity>;
+struct SetEntityScript { std::string key,scriptId; ScriptProperties properties; };
+// Registers (or re-reads) a Lua file as a script asset.
+struct AddScript { std::string id; std::filesystem::path path; };
+using SceneEdit=std::variant<SetTransform,SetEntityProperties,SetMaterial,CreateMaterial,SetParent,CreateEntity,DeleteEntity,SetEntityScript,AddScript>;
 // Human-readable history label, e.g. "Move Crystal pedestal", resolved against the pre-edit scene.
 std::string describe(const SceneEdit& edit,const Scene& scene);
 // Frontends retain keys, not entity handles, across edits and history navigation.
@@ -30,6 +33,10 @@ public:
     // Returns false when nothing was pending or the preview matched the committed state.
     bool commitPreview();
     void cancelPreview() { preview.reset(); }
+    // Group edits (e.g. one script or console command) into a single undo step. Groups nest;
+    // the outermost endGroup() closes it. The label replaces the first edit's label.
+    void beginGroup(std::string label);
+    void endGroup();
     // Undo first discards an uncommitted preview, then walks committed history.
     bool undo();
     bool redo();
@@ -42,6 +49,8 @@ public:
     std::vector<std::string> redoHistory() const;
     // True when the committed document differs from the last saved/loaded revision.
     bool modified() const { return state.revision!=savedRevision; }
+    // Changes with every committed edit, undo, redo, load, or reset.
+    uint64_t revision() const { return state.revision; }
     void startPlay();
     void stopPlay();
     bool playing() const { return playScene.has_value(); }
@@ -62,5 +71,8 @@ private:
     std::vector<Entry> undoStack,redoStack;
     std::optional<Preview> preview;
     std::optional<SceneDocument> playScene;
+    int groupDepth=0;
+    bool groupCommitted=false;
+    std::string groupLabel;
 };
 }

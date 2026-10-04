@@ -22,6 +22,7 @@ cmake --build build                      # Build applications, shaders, and test
 ctest --test-dir build --output-on-failure
 ./build/swan editor assets/scenes/gltf-garden.swan.json
 nix run path:.#editor -- assets/scenes/gltf-garden.swan.json  # Packaged editor
+./build/swan script examples/scripts/garden-bot.lua            # Headless Lua automation
 nix build path:.                         # Build the installed package
 nix flake check path:.                   # Validate available flake checks
 ```
@@ -42,4 +43,6 @@ History uses imperative, descriptive subjects such as `Add conservative frustum 
 
 ## Architecture & Documentation Rules
 
-Keep Vulkan ownership in the renderer and importer structs behind CPU asset boundaries. Editor commands belong in the `EditorAction` registry (menus, shortcuts, and the palette share it); panels change scenes only through `EditorDocument::showPreview()`/`apply()`. Dear ImGui and ImGuizmo are pinned flake inputs, not nixpkgs packages. Preserve authored/runtime scene separation and validated editor commands. Resolve stable entity keys across document revisions instead of retaining handles. Maintain scene-version compatibility explicitly. Write all `README.md` files in English and update the roadmap when feature scope changes.
+Keep Vulkan ownership in the renderer and importer structs behind CPU asset boundaries. Editor commands belong in the `EditorAction` registry (menus, shortcuts, and the palette share it); panels change scenes only through `EditorDocument::showPreview()`/`apply()`. Dear ImGui and ImGuizmo are pinned flake inputs, not nixpkgs packages.
+
+Lua is bound through the plain C API (`src/script_lua.hpp`); do not add a binding library. Lua errors longjmp past C++ destructors, so binding functions wrap their bodies in `lua::protect()`, validate arguments by throwing C++ exceptions, call script code only through `lua_pcall` (`lua::callProtected`), and read script tables with raw access. Behaviour scripts stay sandboxed and mutate only runtime scenes. Keep `lua/types/swan.lua` in sync with the bindings; `nix flake check` type-checks bundled scripts with LuaLS. Preserve authored/runtime scene separation and validated editor commands. Resolve stable entity keys across document revisions instead of retaining handles. Maintain scene-version compatibility explicitly. Write all `README.md` files in English and update the roadmap when feature scope changes.

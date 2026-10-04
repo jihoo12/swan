@@ -1,12 +1,16 @@
 #include "game.hpp"
 #include "physics.hpp"
 #include "scene_io.hpp"
+#include "script_runtime.hpp"
 #include <iostream>
+#include <utility>
 #include <algorithm>
 #include <cmath>
 namespace swan {
 namespace { constexpr float eyeHeight=1.65f; }
 Game::Game(bool overview):Game(makeGarden(),overview) {}
+Game::~Game()=default;
+std::vector<std::string> Game::takeMessages() {return std::exchange(messages,{});}
 Game::Game(Garden initial,bool overview,std::filesystem::path source,std::filesystem::path save)
     :sourcePath(std::move(source)),savePath(std::move(save)) {
     replaceDefinition(std::move(initial));
@@ -16,7 +20,14 @@ void Game::replaceDefinition(Garden initial) {
     Garden runtime=initial; // Complete potentially throwing allocations before replacing the world.
     RenderPose pose; pose.capture(runtime.scene);
     previousPose=std::move(pose); previousTime=0;
+    scriptRuntime.reset(); // Releases references into the scene being replaced.
     definition=std::move(initial); garden=std::move(runtime);
+    bool scripted=false;
+    for(auto id:garden.scene.entities()) scripted|=!garden.scene.get(id)->scriptId.empty();
+    if(scripted) scriptRuntime=std::make_unique<ScriptRuntime>(garden.scene,[this](const std::string& line){
+        messages.push_back(line);
+        if(messages.size()>256) messages.erase(messages.begin());
+    });
     time=0; collectedCount=0; paused=false; flight=false; view=Camera{};
     playerYaw=previousPlayerYaw=view.yaw;
     spawn(definition.spawn);
@@ -50,7 +61,11 @@ void Game::collect() {
         float d=glm::length(garden.scene.worldTransform(id).position-view.position);
         if(d<distance) { nearest=id; distance=d; }
     }
-    if(garden.scene.destroy(nearest)) {
+    if(!garden.scene.get(nearest)) return;
+    // The behaviour may react (or even destroy the entity itself) before it is removed.
+    if(scriptRuntime) scriptRuntime->collected(nearest);
+    garden.scene.destroy(nearest);
+    {
         ++collectedCount;
         if(collectedCount==int(garden.shards.size())) {
             garden.scene.assets().set("restored-core",{{1,0.7f,0.2f},3.5f});
@@ -93,6 +108,10 @@ void Game::fixedUpdate(float dt,const Input& input) {
         const auto& a=*entity->animation;
         entity->transform.position.y=a.baseHeight+std::sin(time*1.3f+a.phase)*a.bob;
         entity->transform.yaw=std::remainder(entity->transform.yaw+dt*a.speed,6.2831853f);
+    }
+    if(scriptRuntime) {
+        ScriptGameState state{time,feet,grounded,flight,collectedCount,int(garden.shards.size()),input};
+        scriptRuntime->update(dt,state);
     }
     glm::vec3 front=forward(view.yaw,0),right=glm::cross(front,glm::vec3(0,1,0));
     glm::vec3 movement=front*input.move.y+right*input.move.x;
@@ -138,9 +157,9 @@ RenderFrame Game::renderFrame(float interpolation) const {
 std::string Game::status() const {
     std::string text=flight?"FLY | F walk":"WALK | F fly";
     if(!flight) text+=thirdPerson?" | THIRD PERSON (V)":" | FIRST PERSON (V)";
-    text+=" | shards "+std::to_string(collectedCount)+"/"+std::to_string(garden.shards.size());
-    if(collectedCount==int(garden.shards.size())) text+=" | Garden restored!";
-    else if(!flight) {
+    if(!garden.shards.empty()) text+=" | shards "+std::to_string(collectedCount)+"/"+std::to_string(garden.shards.size());
+    if(restored()) text+=" | Garden restored!";
+    else if(!flight && !garden.shards.empty()) {
         for(auto id:garden.shards) {
             const auto* entity=garden.scene.get(id);
             if(entity && glm::length(garden.scene.worldTransform(id).position-view.position)<2.2f) {text+=" | E collect"; break;}
@@ -148,6 +167,7 @@ std::string Game::status() const {
     }
     if(paused) text+=" | PAUSED";
     if(!fileMessage.empty()) text+=" | "+fileMessage;
+    if(scriptRuntime && !scriptRuntime->message().empty()) text+=" | "+scriptRuntime->message();
     return text;
 }
 }

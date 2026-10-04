@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine with a docking scene editor. Version 0.15 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine with a docking scene editor, Lua scripting, and a headless C++ SDK. Version 0.16 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -176,6 +176,10 @@ nix flake check path:.
 | `src/editor_layer.*` | Editor frame, menus, toolbar, status bar, dock layout, actions, operations |
 | `src/editor_{hierarchy,inspector,viewport,panels}.cpp` | Editor panels (Assets, Console, and History live in `editor_panels.cpp`) |
 | `src/editor_{actions,file_dialog,theme,probe}.*`, `src/editor_icons.hpp` | Action registry and palette, scene browser, theme/fonts, GUI test probe |
+| `src/script_engine.*`, `src/script_lua.*` | Lua 5.4 VM (sandbox, memory cap, instruction budget) and C API binding helpers |
+| `src/script_runtime.*`, `assets/scripts/` | Per-entity behaviour scripts in play, and sample behaviours |
+| `src/simulation.*`, `src/script_api.*`, `src/swan.hpp` | Headless C++ SDK and the Lua automation API (`swan script`, editor console) |
+| `lua/types/`, `.luarc.json`, `examples/` | LuaLS type definitions, automation scripts, an out-of-tree C++ SDK consumer |
 | `tests/`, `scripts/smoke-test.sh`, `scripts/editor-ui-test.sh` | CPU, graphical, and real-input editor verification |
 
 ## Driver troubleshooting
@@ -266,6 +270,73 @@ The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets
 New, Open, Revert, Quit, and closing the window ask before discarding unsaved changes (**•** in the title bar). Gizmo rotation is yaw-only and scaling an entity that has children stays uniform, matching the scene's transform model. Play copies the authored scene and runs the garden game inside the viewport; Stop discards runtime changes, and editing is disabled while playing. Scenes without the garden's goal/collectible roles stay editable, but Play reports an error.
 
 Current limits: single selection; no asset thumbnails for textures; no multi-window (platform viewport) support; materials are created only through *Make unique*. `--editor`, `--scene`, and `--save-scene` remain supported; with `--save-scene`, Ctrl+S writes to that path.
+
+## Scripting (Lua 5.4)
+
+Swan embeds Lua 5.4 through its C API (no binding library), with [LuaLS](https://luals.github.io/) type definitions in `lua/types/swan.lua` for completion and type checking. The dev shell includes `lua-language-server`; `nix flake check` type-checks every bundled script.
+
+### Behaviour scripts
+
+Scene version 6 adds `scripts` assets and per-entity `script` and `properties` (versions 1–5 still load):
+
+```json
+"scripts": { "spinner": { "source": "../scripts/spinner.lua" } },
+"entities": [ { "id": "reward", "script": "spinner", "properties": { "speed": 2.5 }, ... } ]
+```
+
+```lua
+-- assets/scripts/spinner.lua
+local Spinner = { properties = { speed = 1.0 } }   -- defaults; entities override them
+function Spinner:update(dt)
+  self.entity.yaw = self.entity.yaw + self.speed * dt
+end
+return Spinner
+```
+
+A behaviour returns a table with optional `start(self)`, `update(self, dt)` (every 1/120 s tick), and `collected(self)`. `self.entity` exposes `position`, `scale`, `yaw`, `material`, `name`, `world_position`, `parent`, `alive`, and `destroy()`; the global `game` provides `time`, `collected`, `total`, `player`, `input`, `message()`, `find()`, `entities()`, and `spawn{...}`. Behaviours modify only the runtime copy of the scene, never authored data.
+
+Behaviours run sandboxed: only `base`, `coroutine`, `math`, `string`, `table`, and `utf8` are available, chunks must be text, each callback has a 5-million-instruction budget, and the VM is capped at 64 MiB. An error, an infinite loop, or a syntax error stops only that entity's behaviour and is reported (Console in the editor, stdout in the game). `assets/scenes/scripted-garden.swan.json` uses four sample behaviours: a pulsing pedestal, shards that announce progress, and a gate that opens over a spinning reward once every shard is collected.
+
+In the editor, attach behaviours from the Inspector's **Script** section or by dragging from **Assets > Scripts** onto an entity; edit per-entity property overrides there. *New Script...* writes a template and registers it. **Play reloads every script from disk**, so edit a `.lua` file and press F5 twice. F5 in the game reloads the scene and its scripts.
+
+### Automation and the console
+
+`swan script FILE.lua [ARGS...]` runs a trusted script without a window (full standard library). Every edit goes through the same validated, undoable commands as the editor:
+
+```lua
+local doc = swan.open("assets/scenes/gltf-garden.swan.json")
+doc:transaction("Raise pillars", function()            -- one undo step; errors roll back
+  for _, e in ipairs(doc:entities()) do
+    if e.name:find("pillar") then doc:set(e.key, { position = e.position + vec3(0, 1, 0) }) end
+  end
+end)
+local sim = swan.simulate(doc)                           -- headless play, scripts included
+sim:step(2.0, { move = vec2(0, 1) })
+print(sim:player().position, sim.status)
+doc:save("/tmp/raised.swan.json")
+```
+
+`examples/scripts/` contains `scene-report.lua`, `garden-bot.lua` (walks to every shard, collects it, and asserts the gate opened), and `make-scripted-garden.lua` (which generated the scripted sample scene). The editor's **Console** has a Lua prompt (Ctrl+`) with the live document bound as `doc`: one line is one undo step, expressions print their value, Up/Down recalls history, and with an empty prompt Ctrl+Z undoes the last command.
+
+## Headless C++ SDK
+
+The package installs static libraries, window-free headers, and a CMake package. Link `swan::headless`:
+
+```cmake
+find_package(swan 0.16 CONFIG REQUIRED)
+target_link_libraries(app PRIVATE swan::headless)
+```
+
+```cpp
+#include <swan/swan.hpp>
+swan::EditorDocument document(swan::loadScene("scene.swan.json"));   // undoable edits
+swan::Simulation simulation(document.document());                    // 120 Hz, no window/GPU
+simulation.step(2.0,swan::Input{.move={0,1}});
+auto feet=simulation.playerPosition();
+for(auto& line:simulation.takeMessages()) std::cout<<line<<'\n';   // script output
+```
+
+`Simulation` runs the full gameplay layer (physics, collection, behaviour scripts) deterministically: identical inputs produce identical states. `ScriptEngine` plus `bindScriptApi()`/`bindDocument()` embed the Lua automation API in another program. `examples/headless-cpp/` is an out-of-tree consumer that the `headless-example` flake check builds against the installed package and runs.
 
 ### Editor dependencies and development
 

@@ -3,6 +3,7 @@
 #include "model.hpp"
 #include "texture.hpp"
 #include <map>
+#include <memory>
 #include <string>
 namespace swan {
 struct MeshAsset { std::filesystem::path source; SharedMesh data; uint32_t part=0; };
@@ -27,6 +28,22 @@ public:
     const std::map<std::string,TextureAsset>& entries() const { return textures; }
 private:
     std::map<std::string,TextureAsset> textures;
+};
+// Lua source text, read when the scene loads; the runtime compiles it (core stays Lua-free).
+struct ScriptAsset { std::filesystem::path source; std::shared_ptr<const std::string> code; };
+class ScriptAssets {
+public:
+    static constexpr size_t maxBytes=1024*1024,maxScripts=256;
+    void load(std::string id,const std::filesystem::path& path);
+    // In-memory scripts (tests, generated content); `source` may be empty.
+    void set(std::string id,std::string code,std::filesystem::path source={});
+    // Re-read every file-backed script, e.g. before entering Play.
+    void reloadSources();
+    const ScriptAsset& get(const std::string& id) const;
+    bool contains(const std::string& id) const { return scripts.contains(id); }
+    const std::map<std::string,ScriptAsset>& entries() const { return scripts; }
+private:
+    std::map<std::string,ScriptAsset> scripts;
 };
 struct Material {
     glm::vec3 color{1}; float emission=0;

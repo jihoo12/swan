@@ -35,8 +35,8 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     if(text.size()>maxBytes) throw std::invalid_argument("Scene file exceeds 16 MiB");
     try {
         const auto root=Json::parse(text);
-        keys(root,{"format","version","spawn","materials","meshes","textures","entities"});
-        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || (root.at("version")!=1 && root.at("version")!=2 && root.at("version")!=3 && root.at("version")!=4 && root.at("version")!=5))
+        keys(root,{"format","version","spawn","materials","meshes","textures","scripts","entities"});
+        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || root.at("version")<1 || root.at("version")>6)
             throw std::invalid_argument("Unsupported scene format/version");
         SceneDocument document;
         document.spawn=vector(root.at("spawn"));
@@ -91,12 +91,23 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
         for(const auto& [id,material]:document.scene.assets().entries()) {
             (void)id; if(!document.scene.textures().contains(material.textureId)) throw std::invalid_argument("Unknown texture asset: "+material.textureId);
         }
+        if(root.contains("scripts")) {
+            if(root.at("version")<6) throw std::invalid_argument("Script assets require scene version 6");
+            const auto& scripts=root.at("scripts");
+            if(!scripts.is_object() || scripts.size()>ScriptAssets::maxScripts) throw std::invalid_argument("Scripts must be an object with at most 256 entries");
+            auto base=baseDirectory.empty()?std::filesystem::current_path():baseDirectory;
+            for(auto it=scripts.begin();it!=scripts.end();++it) {
+                keys(it.value(),{"source"}); auto source=it.value().at("source").get<std::string>();
+                if(source.empty()) throw std::invalid_argument("Script source cannot be empty");
+                document.scene.scripts().load(it.key(),base/std::filesystem::path(source));
+            }
+        }
         const auto& entities=root.at("entities");
         if(!entities.is_array() || entities.size()>maxEntities) throw std::invalid_argument("Expected an entity array with at most 10000 entries");
         for(size_t i=0;i<entities.size();++i) {
             try {
                 const auto& source=entities[i];
-                keys(source,{"id","name","mesh","material","transform","solid","collectible","goal","animation","parent"});
+                keys(source,{"id","name","mesh","material","transform","solid","collectible","goal","animation","parent","script","properties"});
                 Entity entity;
                 entity.key=source.at("id").get<std::string>();
                 if(entity.key.empty()) throw std::invalid_argument("Entity ID cannot be empty");
@@ -109,6 +120,20 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
                 if(source.contains("animation")) {
                     const auto& a=source.at("animation"); keys(a,{"base_height","phase","bob","speed"});
                     entity.animation=Animation{number(a.at("base_height")),number(a.at("phase")),number(a.at("bob")),number(a.at("speed"))};
+                }
+                if(source.contains("script") || source.contains("properties")) {
+                    if(root.at("version")<6) throw std::invalid_argument("Entity scripts require scene version 6");
+                    entity.scriptId=source.value("script",std::string());
+                    if(source.contains("properties")) {
+                        const auto& properties=source.at("properties");
+                        if(!properties.is_object()) throw std::invalid_argument("Script properties must be an object");
+                        for(auto it=properties.begin();it!=properties.end();++it) {
+                            if(it.value().is_boolean()) entity.properties[it.key()]=it.value().get<bool>();
+                            else if(it.value().is_number()) entity.properties[it.key()]=double(number(it.value()));
+                            else if(it.value().is_string()) entity.properties[it.key()]=it.value().get<std::string>();
+                            else throw std::invalid_argument("Script property must be a number, boolean, or string: "+it.key());
+                        }
+                    }
                 }
                 document.scene.create(std::move(entity));
             } catch(const std::exception& e) { throw std::invalid_argument("Entity "+std::to_string(i)+": "+e.what()); }
@@ -125,8 +150,8 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     } catch(const std::exception& e) { throw std::invalid_argument(std::string("Invalid Swan scene: ")+e.what()); }
 }
 std::string serializeScene(const SceneDocument& document,const std::filesystem::path& baseDirectory) {
-    Json root={{"format","swan-scene"},{"version",5},{"spawn",vector(document.spawn)},
-               {"materials",Json::object()},{"meshes",Json::object()},{"textures",Json::object()},{"entities",Json::array()}};
+    Json root={{"format","swan-scene"},{"version",6},{"spawn",vector(document.spawn)},
+               {"materials",Json::object()},{"meshes",Json::object()},{"textures",Json::object()},{"scripts",Json::object()},{"entities",Json::array()}};
     for(const auto& [id,material]:document.scene.assets().entries())
         root["materials"][id]={{"color",vector(material.color)},{"emission",material.emission},
             {"texture",material.textureId},{"uv_scale",Json::array({material.uvScale.x,material.uvScale.y})}};
@@ -141,12 +166,23 @@ std::string serializeScene(const SceneDocument& document,const std::filesystem::
         std::error_code error; auto relative=std::filesystem::relative(texture.source,base,error);
         root["textures"][id]={{"source",(error?texture.source:relative).generic_string()}};
     }
+    for(const auto& [id,script]:document.scene.scripts().entries()) {
+        if(script.source.empty()) throw std::invalid_argument("Script "+id+" exists only in memory and cannot be saved");
+        std::error_code error; auto relative=std::filesystem::relative(script.source,base,error);
+        root["scripts"][id]={{"source",(error?script.source:relative).generic_string()}};
+    }
+    if(root["scripts"].empty()) root.erase("scripts");
     for(auto id:document.scene.entities()) {
         const auto& e=*document.scene.get(id);
         Json entity={{"id",e.key},{"name",e.name},{"mesh",e.meshId},{"material",e.materialId},
             {"transform",{{"position",vector(e.transform.position)},{"scale",vector(e.transform.scale)},{"yaw",e.transform.yaw}}},
             {"solid",e.solid},{"collectible",e.collectible},{"goal",e.goal}};
         if(auto parent=document.scene.parent(id)) entity["parent"]=document.scene.get(*parent)->key;
+        if(!e.scriptId.empty()) entity["script"]=e.scriptId;
+        if(!e.properties.empty()) {
+            entity["properties"]=Json::object();
+            for(const auto& [name,value]:e.properties) std::visit([&](const auto& v){entity["properties"][name]=v;},value);
+        }
         if(e.animation) {
             const auto& a=*e.animation;
             entity["animation"]={{"base_height",a.baseHeight},{"phase",a.phase},{"bob",a.bob},{"speed",a.speed}};

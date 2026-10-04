@@ -1,0 +1,14 @@
+@PACKAGE_INIT@
+include(CMakeFindDependencyMacro)
+# Static libraries: consumers link Swan's dependencies too.
+find_dependency(glm CONFIG)
+find_dependency(nlohmann_json 3.11 CONFIG)
+find_dependency(tinyobjloader CONFIG)
+find_dependency(PNG)
+find_dependency(assimp CONFIG)
+find_dependency(PkgConfig)
+pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua5.4)
+include("${CMAKE_CURRENT_LIST_DIR}/swanTargets.cmake")
+# Installed sample scenes, scripts, and Lua type definitions.
+set_and_check(SWAN_DATA_DIR "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/swan")
+check_required_components(swan)

@@ -1,5 +1,7 @@
 #include "assets.hpp"
 #include <cmath>
+#include <fstream>
+#include <sstream>
 #include <stdexcept>
 namespace swan {
 MeshAssets::MeshAssets() { meshes.emplace("builtin:cube",MeshAsset{{},cubeMesh()}); }
@@ -43,6 +45,41 @@ void TextureAssets::load(std::string id,const std::filesystem::path& path) {
 const TextureAsset& TextureAssets::get(const std::string& id) const {
     auto found=textures.find(id);
     if(found==textures.end()) throw std::invalid_argument("Unknown texture asset: "+id);
+    return found->second;
+}
+namespace {
+std::string readScript(const std::filesystem::path& path) {
+    std::ifstream input(path,std::ios::binary|std::ios::ate);
+    if(!input) throw std::invalid_argument("Cannot open script: "+path.string());
+    auto size=input.tellg();
+    if(size<0 || size>std::streamoff(ScriptAssets::maxBytes)) throw std::invalid_argument("Script exceeds 1 MiB: "+path.string());
+    std::string code(size_t(size),'\0');input.seekg(0);input.read(code.data(),size);
+    if(!input) throw std::invalid_argument("Cannot read script: "+path.string());
+    return code;
+}
+void checkScriptId(const std::string& id) {
+    if(id.empty() || id.size()>256 || id.starts_with("builtin:")) throw std::invalid_argument("Invalid script asset ID: "+id);
+}
+}
+void ScriptAssets::load(std::string id,const std::filesystem::path& path) {
+    auto source=std::filesystem::canonical(path);
+    set(std::move(id),readScript(source),source);
+}
+void ScriptAssets::set(std::string id,std::string code,std::filesystem::path source) {
+    checkScriptId(id);
+    if(code.size()>maxBytes) throw std::invalid_argument("Script exceeds 1 MiB: "+id);
+    if(!scripts.contains(id) && scripts.size()>=maxScripts) throw std::invalid_argument("At most 256 scripts are supported");
+    scripts.insert_or_assign(std::move(id),ScriptAsset{std::move(source),std::make_shared<const std::string>(std::move(code))});
+}
+void ScriptAssets::reloadSources() {
+    // Read everything first so a missing file leaves all scripts unchanged.
+    std::map<std::string,std::string> fresh;
+    for(const auto& [id,script]:scripts) if(!script.source.empty()) fresh[id]=readScript(script.source);
+    for(auto& [id,code]:fresh) scripts.at(id).code=std::make_shared<const std::string>(std::move(code));
+}
+const ScriptAsset& ScriptAssets::get(const std::string& id) const {
+    auto found=scripts.find(id);
+    if(found==scripts.end()) throw std::invalid_argument("Unknown script asset: "+id);
     return found->second;
 }
 MaterialAssets::MaterialAssets() { set("default",{}); }

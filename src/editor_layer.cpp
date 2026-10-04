@@ -4,6 +4,10 @@
 #include "editor_theme.hpp"
 #include "editor_view.hpp"
 #include "resources.hpp"
+#include "script_api.hpp"
+#include "script_runtime.hpp"
+#include <cctype>
+#include <fstream>
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <ImGuizmo.h>
@@ -63,6 +67,8 @@ void EditorLayer::drawGui(const GuiFrame& frame) {
     probe::beginFrame();
     ImGuizmo::BeginFrame();
     camera.update(frame.deltaTime);
+    if(play) for(auto& line:play->takeMessages())
+        log(line.starts_with("Script ")?Level::Error:Level::Info,line.starts_with("Script ")?line:"[script] "+line);
     if(playCaptured && ImGui::IsKeyPressed(ImGuiKey_Escape,false)) playCaptured=false;
     else actions.dispatchShortcuts();
     drawMenuBar();
@@ -87,6 +93,11 @@ void EditorLayer::drawGui(const GuiFrame& frame) {
     probe::value("modified",document.modified()?"true":"false");
     probe::value("mode",play?"play":"authoring");
     probe::value("undo",document.undoLabel());
+    if(probe::enabled()) {
+        std::string recent;
+        for(size_t i=logs.size()>8?logs.size()-8:0;i<logs.size();++i) recent+=logs[i].text+"\n";
+        probe::value("log",recent);
+    }
     probe::endFrame();
 }
 void EditorLayer::registerActions() {
@@ -147,6 +158,10 @@ void EditorLayer::registerActions() {
     add({"tool.scale","Scale Tool",icon::Scale,"Tools",ImGuiKey_R,0,[this]{gizmo=Gizmo::Scale;},tools,[this]{return gizmo==Gizmo::Scale;}});
     add({"tool.space","Toggle Local/World Space",icon::Globe,"Tools",ImGuiKey_X,0,[this]{gizmoLocal=!gizmoLocal;},tools,[this]{return gizmoLocal;}});
     add({"tool.snap","Toggle Snapping",icon::Magnet,"Tools",0,0,[this]{settings.snap=!settings.snap;},{},[this]{return settings.snap;}});
+    // Scripting
+    add({"script.new","New Script...",icon::FileCode,"Script",0,0,[this]{newScript();},editing});
+    add({"script.import","Import Script...",icon::FileCode,"Script",0,0,[this]{importScript();},editing});
+    add({"script.console","Lua Console",icon::Terminal,"Script",ImGuiMod_Ctrl|ImGuiKey_GraveAccent,0,[this]{showConsole=true;focusConsole=true;}});
     // Play
     add({"play.toggle","Play / Stop",icon::Play,"Play",ImGuiKey_F5,ImGuiMod_Ctrl|ImGuiKey_P,[this]{togglePlay();}});
     // Help
@@ -507,11 +522,17 @@ void EditorLayer::togglePlay() {
         document.startPlay();
         try {
             auto runtime=document.runtime();
+            // Play always runs the scripts as they are on disk now (edit, then press F5 again).
+            try {runtime.scene.scripts().reloadSources();}
+            catch(const std::exception& error) {log(Level::Warning,std::string("Using cached scripts: ")+error.what());}
             auto game=std::make_unique<Game>(gardenFromScene(std::move(runtime.scene),runtime.spawn),false);
             game->setThirdPerson(thirdPerson);play=std::move(game);
         } catch(...) {document.stopPlay();throw;}
         navigation=Navigation::None;
         notify(Level::Info,"Playing: click the viewport to control, Esc releases the mouse");
+        size_t scripted=0;
+        for(auto id:play->scene().entities()) scripted+=!play->scene().get(id)->scriptId.empty();
+        if(scripted) log(Level::Info,"Running "+std::to_string(scripted)+" behaviour script(s); output appears here");
     });
 }
 void EditorLayer::createEntity(const std::string& meshId,std::optional<glm::vec3> position) {
@@ -574,6 +595,79 @@ void EditorLayer::makeMaterialUnique() {
     std::vector<SceneEdit> edits{CreateMaterial{id,scene.assets().get(entity->materialId)},
         SetEntityProperties{entity->key,entity->name,entity->meshId,id,entity->solid,entity->collectible,entity->goal}};
     if(attempt([&]{document.apply(edits,"Make material unique ("+id+")");})) notify(Level::Success,"Created material "+id);
+}
+void EditorLayer::runConsole(const std::string& code) {
+    if(code.empty()) return;
+    if(consoleHistory.empty() || consoleHistory.back()!=code) consoleHistory.push_back(code);
+    consoleHistoryIndex=-1;
+    log(Level::Info,"> "+code);
+    if(!attempt([&]{
+        if(!console) {
+            // Trusted like any editor action, but budgeted so a runaway loop cannot freeze the UI.
+            console=std::make_unique<ScriptEngine>(ScriptEngine::Mode::Tool,[this](const std::string& line){log(Level::Info,line);},ScriptLimits{512u<<20,200'000'000});
+            bindScriptApi(*console);
+        }
+        bindDocument(*console,"doc",document,saveTarget());
+    })) return;
+    // One console line is one undo step, however many edits it makes.
+    document.beginGroup("Console: "+(code.size()>40?code.substr(0,40)+"...":code));
+    auto result=console->run(code,"=console",true);
+    document.endGroup();
+    if(!result.ok) {log(Level::Error,result.error);return;}
+    std::string values;
+    for(const auto& value:result.values) values+=(values.empty()?"":"   ")+value;
+    if(!values.empty()) log(Level::Success,values);
+}
+void EditorLayer::assignScript(const std::string& key,const std::string& scriptId) {
+    const auto& scene=document.document().scene;
+    const auto* entity=scene.get(scene.find(key));
+    if(!entity || entity->scriptId==scriptId) return;
+    if(attempt([&]{document.apply(SetEntityScript{key,scriptId,entity->properties},(scriptId.empty()?"Remove script from ":"Attach "+scriptId+" to ")+(entity->name.empty()?key:entity->name));}))
+        notify(Level::Success,scriptId.empty()?"Removed script":"Attached script "+scriptId);
+}
+namespace {
+std::string uniqueScriptId(const ScriptAssets& scripts,const std::string& base) {
+    if(!scripts.contains(base)) return base;
+    for(int i=2;;++i) if(auto id=base+"-"+std::to_string(i);!scripts.contains(id)) return id;
+}
+std::string className(const std::string& stem) {
+    std::string name;bool upper=true;
+    for(char c:stem) {
+        if(!std::isalnum(static_cast<unsigned char>(c))) {upper=true;continue;}
+        name+=upper?char(std::toupper(static_cast<unsigned char>(c))):c;upper=false;
+    }
+    if(name.empty() || std::isdigit(static_cast<unsigned char>(name[0]))) name="Behaviour"+name;
+    return name;
+}
+}
+void EditorLayer::newScript() {
+    fileDialog.open(FileDialog::Mode::Save,std::filesystem::current_path()/"assets/scripts/behaviour.lua",[this](const std::filesystem::path& path){
+        if(!attempt([&]{
+            if(!std::filesystem::exists(path)) {
+                auto name=className(path.stem().string());
+                std::ofstream output(path);
+                output<<"-- "<<name<<" behaviour. Attach it in the Inspector; Play reloads scripts from disk.\n"
+                      <<"---@class "<<name<<" : Behaviour\n"
+                      <<"---@field speed number\n"
+                      <<"local "<<name<<" = { properties = { speed = 1.0 } }\n\n"
+                      <<"function "<<name<<":start()\nend\n\n"
+                      <<"function "<<name<<":update(dt)\n  self.entity.yaw = self.entity.yaw + self.speed * dt\nend\n\n"
+                      <<"return "<<name<<"\n";
+                if(!output) throw std::runtime_error("Cannot write "+path.string());
+            }
+        })) return;
+        auto id=uniqueScriptId(document.document().scene.scripts(),path.stem().string());
+        if(!attempt([&]{document.apply(AddScript{id,path});})) return;
+        notify(Level::Success,"Created script "+id+" ("+path.filename().string()+")");
+        if(const auto* entity=selectedEntity()) assignScript(entity->key,id);
+        assetTab="Scripts";
+    },".lua");
+}
+void EditorLayer::importScript() {
+    fileDialog.open(FileDialog::Mode::Open,std::filesystem::current_path()/"assets/scripts",[this](const std::filesystem::path& path){
+        auto id=uniqueScriptId(document.document().scene.scripts(),path.stem().string());
+        if(attempt([&]{document.apply(AddScript{id,path});})) notify(Level::Success,"Imported script "+id);
+    },".lua");
 }
 void EditorLayer::requestQuit() {guardUnsaved([this]{closeApproved=true;quitting=true;});}
 bool EditorLayer::allowClose() {

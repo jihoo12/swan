@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <map>
 #include <string>
+#include <variant>
 #include <vector>
 namespace swan {
 struct Transform { glm::vec3 position{},scale{1}; float yaw=0; };
@@ -12,6 +14,9 @@ Transform composeTransform(const Transform& parent,const Transform& child);
 // Inverse of composeTransform: the child-local transform that produces `world` under `parent`.
 Transform relativeTransform(const Transform& parent,const Transform& world);
 struct Animation { float baseHeight=0,phase=0,bob=0.2f,speed=0.5f; };
+// Per-entity script parameters (number, flag, or text), overriding the script's defaults.
+using ScriptValue=std::variant<double,bool,std::string>;
+using ScriptProperties=std::map<std::string,ScriptValue>;
 struct EntityId {
     uint32_t index=std::numeric_limits<uint32_t>::max(),generation=0;
     bool operator==(const EntityId&) const = default;
@@ -25,6 +30,8 @@ struct Entity {
     bool goal=false;
     bool solid=false,collectible=false;
     std::optional<Animation> animation;
+    std::string scriptId;          // Empty: no behaviour script.
+    ScriptProperties properties;   // At most 32; keys 1..64 characters.
 };
 // Generation checks prevent a deleted object's handle from naming its replacement.
 // Handles are scoped to one scene; use entity keys for identity across reloads.
@@ -41,6 +48,8 @@ public:
     const MeshAssets& meshes() const { return meshAssets; }
     TextureAssets& textures() { return textureAssets; }
     const TextureAssets& textures() const { return textureAssets; }
+    ScriptAssets& scripts() { return scriptAssets; }
+    const ScriptAssets& scripts() const { return scriptAssets; }
     // Local transforms are retained on reparenting; parents require uniform scale.
     void setParent(EntityId child, std::optional<EntityId> parent);
     std::optional<EntityId> parent(EntityId child) const;
@@ -59,5 +68,6 @@ private:
     MaterialAssets materialAssets;
     MeshAssets meshAssets;
     TextureAssets textureAssets;
+    ScriptAssets scriptAssets;
 };
 }

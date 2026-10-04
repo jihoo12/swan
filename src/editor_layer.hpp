@@ -6,6 +6,7 @@
 #include "editor_settings.hpp"
 #include "game.hpp"
 #include "options.hpp"
+#include "script_engine.hpp"
 #include <array>
 #include <deque>
 #include <functional>
@@ -51,6 +52,8 @@ private:
     void drawAssets();                          // editor_panels.cpp
     void drawConsole();
     void drawHistory();
+    void drawScriptSection(const Entity& entity);   // editor_inspector.cpp
+    int consoleHistoryStep(ImGuiInputTextCallbackData* data);
     // Operations.
     bool attempt(const std::function<void()>& action);
     void preview(const SceneEdit& edit,std::string label={});
@@ -71,6 +74,11 @@ private:
     void assignMaterial(const std::string& key,const std::string& materialId);
     void makeMaterialUnique();
     void requestQuit();
+    // Scripting (editor_layer.cpp).
+    void runConsole(const std::string& code);
+    void newScript();
+    void importScript();
+    void assignScript(const std::string& key,const std::string& scriptId);
     void persistSettings();
     std::string sceneTitle() const;
     std::filesystem::path saveTarget() const;
@@ -99,6 +107,12 @@ private:
     std::function<void()> afterUnsaved;
     std::array<char,128> hierarchyFilter{},assetFilter{};
     std::array<char,256> nameBuffer{};
+    // Lua console: a trusted engine bound to this document as `doc`, created on first use.
+    std::unique_ptr<ScriptEngine> console;
+    std::string consoleInput,newPropertyName;
+    std::vector<std::string> consoleHistory;
+    int consoleHistoryIndex=-1,newPropertyType=0;
+    bool focusConsole=false;
     std::string nameKey,scrollToKey,assetTab="Meshes";
     std::deque<LogEntry> logs;
     std::vector<Toast> toasts;

@@ -1,0 +1,449 @@
+{
+  "entities": [
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "floor",
+      "material": "floor",
+      "mesh": "builtin:cube",
+      "name": "Courtyard",
+      "solid": true,
+      "transform": {
+        "position": [
+          0.0,
+          -0.4000000059604645,
+          0.0
+        ],
+        "scale": [
+          24.0,
+          0.800000011920929,
+          24.0
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "pedestal",
+      "material": "stone",
+      "mesh": "builtin:cube",
+      "name": "Crystal pedestal",
+      "properties": {
+        "amount": 0.04,
+        "rate": 1.5
+      },
+      "script": "pulse",
+      "solid": true,
+      "transform": {
+        "position": [
+          0.0,
+          0.30000001192092896,
+          0.0
+        ],
+        "scale": [
+          3.0,
+          0.6000000238418579,
+          3.0
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "animation": {
+        "base_height": 3.200000047683716,
+        "bob": 0.3499999940395355,
+        "phase": 0.0,
+        "speed": 0.5
+      },
+      "collectible": false,
+      "goal": true,
+      "id": "core",
+      "material": "crystal",
+      "mesh": "crystal-mesh",
+      "name": "Garden heart",
+      "solid": false,
+      "transform": {
+        "position": [
+          0.0,
+          3.200000047683716,
+          0.0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          1.5
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "left-pillar",
+      "material": "stone",
+      "mesh": "gltf-left",
+      "name": "Left pillar",
+      "solid": false,
+      "transform": {
+        "position": [
+          0.0,
+          2.0,
+          -2.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "right-pillar",
+      "material": "stone",
+      "mesh": "gltf-right",
+      "name": "Right pillar",
+      "solid": false,
+      "transform": {
+        "position": [
+          0.0,
+          2.0,
+          -2.0
+        ],
+        "scale": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "animation": {
+        "base_height": 1.2000000476837158,
+        "bob": 0.15000000596046448,
+        "phase": 0.0,
+        "speed": 1.0
+      },
+      "collectible": true,
+      "goal": false,
+      "id": "shard-1",
+      "material": "gold",
+      "mesh": "crystal-mesh",
+      "name": "Near shard",
+      "script": "shard",
+      "solid": false,
+      "transform": {
+        "position": [
+          0.0,
+          1.2000000476837158,
+          4.0
+        ],
+        "scale": [
+          0.6000000238418579,
+          0.6000000238418579,
+          0.6000000238418579
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "animation": {
+        "base_height": 1.2000000476837158,
+        "bob": 0.15000000596046448,
+        "phase": 1.0,
+        "speed": 1.0
+      },
+      "collectible": true,
+      "goal": false,
+      "id": "shard-2",
+      "material": "gold",
+      "mesh": "crystal-mesh",
+      "name": "Left shard",
+      "script": "shard",
+      "solid": false,
+      "transform": {
+        "position": [
+          -4.0,
+          1.2000000476837158,
+          3.0
+        ],
+        "scale": [
+          0.6000000238418579,
+          0.6000000238418579,
+          0.6000000238418579
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "animation": {
+        "base_height": 1.2000000476837158,
+        "bob": 0.15000000596046448,
+        "phase": 2.0,
+        "speed": 1.0
+      },
+      "collectible": true,
+      "goal": false,
+      "id": "shard-3",
+      "material": "gold",
+      "mesh": "crystal-mesh",
+      "name": "Right shard",
+      "script": "shard",
+      "solid": false,
+      "transform": {
+        "position": [
+          4.0,
+          1.2000000476837158,
+          3.0
+        ],
+        "scale": [
+          0.6000000238418579,
+          0.6000000238418579,
+          0.6000000238418579
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "alcove-left",
+      "material": "stone",
+      "mesh": "builtin:cube",
+      "name": "Alcove left",
+      "solid": true,
+      "transform": {
+        "position": [
+          -2.200000047683716,
+          1.5,
+          -7.0
+        ],
+        "scale": [
+          0.4000000059604645,
+          3.0,
+          2.4000000953674316
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "alcove-right",
+      "material": "stone",
+      "mesh": "builtin:cube",
+      "name": "Alcove right",
+      "solid": true,
+      "transform": {
+        "position": [
+          2.200000047683716,
+          1.5,
+          -7.0
+        ],
+        "scale": [
+          0.4000000059604645,
+          3.0,
+          2.4000000953674316
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "alcove-back",
+      "material": "stone",
+      "mesh": "builtin:cube",
+      "name": "Alcove back",
+      "solid": true,
+      "transform": {
+        "position": [
+          0.0,
+          1.5,
+          -8.199999809265137
+        ],
+        "scale": [
+          4.800000190734863,
+          3.0,
+          0.4000000059604645
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "gate",
+      "material": "gate",
+      "mesh": "builtin:cube",
+      "name": "Gate",
+      "script": "gate",
+      "solid": true,
+      "transform": {
+        "position": [
+          0.0,
+          1.5,
+          -5.800000190734863
+        ],
+        "scale": [
+          4.0,
+          3.0,
+          0.30000001192092896
+        ],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "reward",
+      "material": "gold",
+      "mesh": "crystal-mesh",
+      "name": "Reward",
+      "properties": {
+        "speed": 2.5
+      },
+      "script": "spinner",
+      "solid": false,
+      "transform": {
+        "position": [
+          0.0,
+          1.2000000476837158,
+          -7.199999809265137
+        ],
+        "scale": [
+          0.800000011920929,
+          0.800000011920929,
+          0.800000011920929
+        ],
+        "yaw": 0.0
+      }
+    }
+  ],
+  "format": "swan-scene",
+  "materials": {
+    "crystal": {
+      "color": [
+        0.10000000149011612,
+        0.8500000238418579,
+        1.0
+      ],
+      "emission": 2.5,
+      "texture": "builtin:white",
+      "uv_scale": [
+        1.0,
+        1.0
+      ]
+    },
+    "default": {
+      "color": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "emission": 0.0,
+      "texture": "builtin:white",
+      "uv_scale": [
+        1.0,
+        1.0
+      ]
+    },
+    "floor": {
+      "color": [
+        0.699999988079071,
+        0.8500000238418579,
+        0.8999999761581421
+      ],
+      "emission": 0.0,
+      "texture": "stone-tiles",
+      "uv_scale": [
+        8.0,
+        8.0
+      ]
+    },
+    "gate": {
+      "color": [
+        0.550000011920929,
+        0.6000000238418579,
+        0.699999988079071
+      ],
+      "emission": 0.0,
+      "texture": "stone-tiles",
+      "uv_scale": [
+        1.0,
+        3.0
+      ]
+    },
+    "gold": {
+      "color": [
+        1.0,
+        0.6499999761581421,
+        0.11999999731779099
+      ],
+      "emission": 1.7999999523162842,
+      "texture": "builtin:white",
+      "uv_scale": [
+        1.0,
+        1.0
+      ]
+    },
+    "stone": {
+      "color": [
+        0.8999999761581421,
+        0.8999999761581421,
+        0.8500000238418579
+      ],
+      "emission": 0.0,
+      "texture": "stone-tiles",
+      "uv_scale": [
+        1.0,
+        3.0
+      ]
+    }
+  },
+  "meshes": {
+    "crystal-mesh": {
+      "source": "../meshes/crystal.obj"
+    },
+    "gltf-left": {
+      "part": 0,
+      "source": "../models/sculpture.gltf"
+    },
+    "gltf-right": {
+      "part": 1,
+      "source": "../models/sculpture.gltf"
+    },
+    "pillar-mesh": {
+      "source": "../meshes/pillar.obj"
+    }
+  },
+  "scripts": {
+    "gate": {
+      "source": "../scripts/gate.lua"
+    },
+    "pulse": {
+      "source": "../scripts/pulse.lua"
+    },
+    "shard": {
+      "source": "../scripts/shard.lua"
+    },
+    "spinner": {
+      "source": "../scripts/spinner.lua"
+    }
+  },
+  "spawn": [
+    0.0,
+    0.20000000298023224,
+    7.0
+  ],
+  "textures": {
+    "stone-tiles": {
+      "source": "../textures/courtyard.png"
+    }
+  },
+  "version": 6
+}

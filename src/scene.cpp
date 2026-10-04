@@ -36,6 +36,13 @@ EntityId Scene::create(Entity entity) {
         if(entity.solid) throw std::invalid_argument("Animated solid colliders are not supported");
     }
     if(entity.goal && entity.collectible) throw std::invalid_argument("A goal cannot also be collectible");
+    if(!entity.scriptId.empty() && !scriptAssets.contains(entity.scriptId)) throw std::invalid_argument("Unknown script asset: "+entity.scriptId);
+    if(entity.properties.size()>32) throw std::invalid_argument("An entity supports at most 32 script properties");
+    for(const auto& [name,value]:entity.properties) {
+        if(name.empty() || name.size()>64) throw std::invalid_argument("Script property names need 1..64 characters");
+        if(const auto* number=std::get_if<double>(&value);number && !std::isfinite(*number)) throw std::invalid_argument("Script property must be finite: "+name);
+        if(const auto* text=std::get_if<std::string>(&value);text && text->size()>1024) throw std::invalid_argument("Script property text exceeds 1 KiB: "+name);
+    }
     if(entity.key.empty()) {
         do { entity.key="entity-"+std::to_string(serial++); } while(get(find(entity.key)));
     }
@@ -57,7 +64,7 @@ EntityId Scene::create(Entity entity) {
 }
 void Scene::validate() const {
     Scene checked;
-    checked.materialAssets=materialAssets; checked.meshAssets=meshAssets; checked.textureAssets=textureAssets;
+    checked.materialAssets=materialAssets; checked.meshAssets=meshAssets; checked.textureAssets=textureAssets; checked.scriptAssets=scriptAssets;
     std::vector<EntityId> mapped(slots.size());
     for(auto id:entities()) mapped[id.index]=checked.create(*get(id));
     for(auto id:entities()) if(auto ancestor=parent(id)) {

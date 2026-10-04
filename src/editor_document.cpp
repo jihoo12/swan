@@ -45,6 +45,10 @@ void applyEdit(SceneDocument& document,std::string& selection,const SceneEdit& e
             if(command.parent) scene.setParent(id,requireEntity(scene,*command.parent));
             selection=scene.get(id)->key;
         } else if constexpr(std::is_same_v<T,DeleteEntity>) scene.destroy(requireEntity(scene,command.key));
+        else if constexpr(std::is_same_v<T,SetEntityScript>) {
+            auto* entity=scene.get(requireEntity(scene,command.key));
+            entity->scriptId=command.scriptId;entity->properties=command.properties;
+        } else if constexpr(std::is_same_v<T,AddScript>) scene.scripts().load(command.id,command.path);
     },edit);
 }
 }
@@ -57,7 +61,9 @@ std::string describe(const SceneEdit& edit,const Scene& scene) {
         else if constexpr(std::is_same_v<T,CreateMaterial>) return "Create material "+command.id;
         else if constexpr(std::is_same_v<T,SetParent>) return "Reparent "+displayName(scene,command.key);
         else if constexpr(std::is_same_v<T,CreateEntity>) return "Create "+(command.value.name.empty()?std::string("entity"):command.value.name);
-        else return "Delete "+displayName(scene,command.key);
+        else if constexpr(std::is_same_v<T,DeleteEntity>) return "Delete "+displayName(scene,command.key);
+        else if constexpr(std::is_same_v<T,SetEntityScript>) return "Edit script of "+displayName(scene,command.key);
+        else return "Add script "+command.id;
     },edit);
 }
 EditorDocument::EditorDocument(SceneDocument document,size_t limit):state{std::move(document),{},0},historyLimit(limit) {
@@ -75,6 +81,11 @@ void EditorDocument::commit(State next,std::string label) {
     auto& scene=next.document.scene;
     if(!next.selection.empty() && !scene.get(scene.find(next.selection))) next.selection.clear();
     next.revision=nextRevision++;
+    if(groupDepth>0) {
+        // Later edits in a group extend the step the first edit created.
+        if(groupCommitted) {redoStack.clear();state=std::move(next);return;}
+        groupCommitted=true;label=groupLabel;
+    }
     // Allocate history before changing live authored state; assets remain shared.
     undoStack.push_back({state,std::move(label)});
     if(undoStack.size()>historyLimit) undoStack.erase(undoStack.begin());
@@ -111,16 +122,25 @@ bool EditorDocument::commitPreview() {
     commit({std::move(value.document),state.selection,0},std::move(value.label));
     return true;
 }
+void EditorDocument::beginGroup(std::string label) {
+    if(groupDepth++==0) {commitPreview();groupCommitted=false;groupLabel=std::move(label);}
+}
+void EditorDocument::endGroup() {
+    if(groupDepth==0) throw std::logic_error("endGroup() without beginGroup()");
+    if(--groupDepth==0) groupCommitted=false;
+}
 bool EditorDocument::undo() {
     requireEditing();
     if(preview) {preview.reset();return true;}
     if(undoStack.empty()) return false;
+    groupCommitted=false; // A later edit in an open group starts a new step.
     auto entry=std::move(undoStack.back());undoStack.pop_back();
     redoStack.push_back({std::move(state),entry.label});state=std::move(entry.state);return true;
 }
 bool EditorDocument::redo() {
     requireEditing();
     if(preview || redoStack.empty()) return false;
+    groupCommitted=false;
     auto entry=std::move(redoStack.back());redoStack.pop_back();
     undoStack.push_back({std::move(state),entry.label});state=std::move(entry.state);return true;
 }
@@ -153,6 +173,6 @@ void EditorDocument::load(const std::filesystem::path& path) {
 void EditorDocument::reset(SceneDocument document) {
     requireEditing();validate(document);
     preview.reset();state={std::move(document),{},nextRevision++};savedRevision=state.revision;
-    undoStack.clear();redoStack.clear();
+    undoStack.clear();redoStack.clear();groupCommitted=false;
 }
 }

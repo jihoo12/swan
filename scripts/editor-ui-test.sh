@@ -41,6 +41,10 @@ wait_for() { # wait_for VALUE-NAME EXPECTED
     for ((i=0;i<100;i++)); do [[ "$(probe value "$1" 2>/dev/null)" == "$2" ]] && return; sleep .05; done
     fail "$1 is '$(probe value "$1")', expected '$2'"
 }
+wait_contains() { # wait_contains VALUE-NAME TEXT
+    for ((i=0;i<100;i++)); do [[ "$(probe value "$1" 2>/dev/null)" == *"$2"* ]] && return; sleep .05; done
+    fail "$1 does not contain '$2': $(probe value "$1")"
+}
 wait_widget() { for ((i=0;i<100;i++)); do probe has "$1" 2>/dev/null && return; sleep .05; done; fail "widget $1 never appeared"; }
 input() { xdotool "$@" >>"$work/input.log" 2>&1; sleep .2; }
 # Press and release like a person: an instantaneous X11 click can land within one GUI frame.
@@ -184,6 +188,32 @@ input key ctrl+q
 wait "$spid" || fail "editor exited with an error"
 spid=
 echo "repeated creation from the hierarchy add menu: ok"
+
+# Scripting: a Lua console line is one undo step; Play runs the scene's behaviour scripts.
+"$binary" editor assets/scenes/scripted-garden.swan.json --x11 --validation --save-scene "$saved" >"$work/swan.log" 2>&1 &
+spid=$!
+wait_widget hierarchy/pedestal
+input key ctrl+grave
+wait_widget console/input
+input type --delay 20 'doc:create{name = "Lua cube", position = vec3(0, 3, 0), script = "spinner", properties = {speed = 3}}'
+input key Return
+wait_contains undo "Console: doc:create"
+save
+check "[x.get('script') for x in scene['entities'] if x['name'] == 'Lua cube'] == ['spinner']"
+check "[x['properties'] for x in scene['entities'] if x['name'] == 'Lua cube'] == [{'speed': 3}]"
+input key ctrl+z
+save
+check "not any(x['name'] == 'Lua cube' for x in scene['entities']) and len(scene['scripts']) == 4"
+input key F5
+wait_for mode play
+wait_contains log "Running 6 behaviour script(s)"
+input key F5
+wait_for mode authoring
+input key ctrl+q
+wait "$spid" || fail "editor exited with an error"
+spid=
+grep -q 'Validation errors: 0' "$work/swan.log" || fail "Vulkan validation errors in the scripting session"
+echo "Lua console transaction, script persistence, scripted Play: ok"
 
 # A fresh editor session needs no scene or save-path arguments.
 "$binary" editor --x11 --validation --frames 10 >"$work/new-editor.log" 2>&1

@@ -4,6 +4,7 @@
 #include "editor_theme.hpp"
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <imgui_stdlib.h>
 #include <cstdio>
 namespace swan {
 namespace {
@@ -173,6 +174,7 @@ void EditorLayer::drawInspector() {
         flag("Goal",&Entity::goal,"Needs every pickup",entity.collectible);
         ImGui::EndTable();
     }
+    drawScriptSection(entity);
     // Hierarchy.
     if(sectionHeader(icon::Tree,"Hierarchy","hierarchy") && beginProperties("##parenting")) {
         property("Parent");
@@ -227,5 +229,72 @@ void EditorLayer::drawInspector() {
     if(play) {ImGui::Spacing();ImGui::TextColored(toVec4(theme::TextDim),"%s  Stop play to edit authored data",icon::Info);}
     ImGui::End();
     for(auto& action:deferred) action();
+}
+void EditorLayer::drawScriptSection(const Entity& entity) {
+    if(!sectionHeader(icon::FileCode,"Script","script")) return;
+    const auto key=entity.key;
+    const auto& scene=document.document().scene;
+    auto display=entity.name.empty()?key:entity.name;
+    auto change=[&](std::string id,ScriptProperties properties,const std::string& label){preview(SetEntityScript{key,std::move(id),std::move(properties)},label);};
+    std::optional<std::string> chosen;
+    std::function<void()> deferred;
+    if(beginProperties("##script")) {
+        property("Behaviour");
+        if(ImGui::BeginCombo("##behaviour",entity.scriptId.empty()?"None":entity.scriptId.c_str())) {
+            if(ImGui::Selectable("None",entity.scriptId.empty())) chosen=std::string();
+            for(const auto& [id,script]:scene.scripts().entries()) {
+                if(ImGui::Selectable((std::string(icon::FileCode)+"  "+id).c_str(),id==entity.scriptId)) chosen=id;
+                ImGui::SetItemTooltip("%s",script.source.string().c_str());
+            }
+            ImGui::EndCombo();
+        }
+        probe::item("inspector/script");
+        if(ImGui::BeginDragDropTarget()) {
+            if(const auto* payload=ImGui::AcceptDragDropPayload("SWAN_SCRIPT")) chosen=std::string(static_cast<const char*>(payload->Data));
+            ImGui::EndDragDropTarget();
+        }
+        // Per-entity overrides of the script's `properties` defaults.
+        std::optional<std::string> removed;
+        for(const auto& [name,value]:entity.properties) {
+            ImGui::PushID(name.c_str());
+            property(name.c_str());
+            float trash=ImGui::GetFrameHeight();
+            ImGui::SetNextItemWidth(-trash-ImGui::GetStyle().ItemSpacing.x);
+            auto properties=entity.properties;
+            auto& edited=properties[name];
+            bool changed=false;
+            if(auto* number=std::get_if<double>(&edited)) {float v=float(*number);if(ImGui::DragFloat("##value",&v,0.05f)) {*number=v;changed=true;}}
+            else if(auto* flag=std::get_if<bool>(&edited)) changed=ImGui::Checkbox("##value",flag);
+            else if(auto* text=std::get_if<std::string>(&edited)) changed=ImGui::InputText("##value",text);
+            if(changed) change(entity.scriptId,properties,"Edit "+name+" on "+display);
+            ImGui::SameLine();
+            if(ImGui::Button(icon::Trash,{trash,0})) removed=name;
+            ImGui::SetItemTooltip("Remove override (the script default applies)");
+            ImGui::PopID();
+        }
+        ImGui::EndTable();
+        if(removed) {auto properties=entity.properties;properties.erase(*removed);deferred=[this,key,id=entity.scriptId,properties,label="Remove "+*removed+" from "+display]{
+            attempt([&]{document.apply(SetEntityScript{key,id,properties},label);});};}
+    }
+    // Add an override: name, type, button.
+    static constexpr const char* types[]={"Number","Flag","Text"};
+    float typeWidth=ImGui::CalcTextSize("Number").x+ImGui::GetFrameHeight()+ImGui::GetStyle().FramePadding.x*2;
+    float addWidth=ImGui::CalcTextSize(icon::Plus).x+ImGui::GetStyle().FramePadding.x*2;
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-typeWidth-addWidth-ImGui::GetStyle().ItemSpacing.x*2);
+    bool submit=ImGui::InputTextWithHint("##new-property","property name",&newPropertyName,ImGuiInputTextFlags_EnterReturnsTrue);
+    ImGui::SameLine();ImGui::SetNextItemWidth(typeWidth);
+    ImGui::Combo("##new-type",&newPropertyType,types,3);
+    ImGui::SameLine();
+    ImGui::BeginDisabled(newPropertyName.empty() || entity.properties.contains(newPropertyName));
+    if((ImGui::Button(icon::Plus) || submit) && !newPropertyName.empty() && !entity.properties.contains(newPropertyName)) {
+        auto properties=entity.properties;
+        properties[newPropertyName]=newPropertyType==0?ScriptValue(0.0):newPropertyType==1?ScriptValue(false):ScriptValue(std::string());
+        deferred=[this,key,id=entity.scriptId,properties,label="Add "+newPropertyName+" to "+display]{attempt([&]{document.apply(SetEntityScript{key,id,properties},label);});};
+        newPropertyName.clear();
+    }
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Add a per-entity property override");
+    if(chosen && *chosen!=entity.scriptId) change(*chosen,entity.properties,chosen->empty()?"Remove script from "+display:"Attach "+*chosen+" to "+display);
+    if(deferred) deferred();
 }
 }

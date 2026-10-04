@@ -111,3 +111,9 @@ entity = next(entity for entity in scene['entities'] if entity['id'] == 'pedesta
 assert all(abs(a-b) < 1e-6 for a, b in zip(entity['transform']['position'], [2, 0.3, 0]))
 PY
 timeout 60s "$binary" --x11 --validation --editor --scene assets/scenes/gltf-garden.swan.json --frames 90 --resize-test
+# Behaviour scripts in windowed play, including reload (which rebuilds the Lua runtime).
+scripted_scene=assets/scenes/scripted-garden.swan.json
+installed_scripted="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/scripted-garden.swan.json"
+if [[ -f "$installed_scripted" ]]; then scripted_scene="$installed_scripted"; fi
+timeout 60s "$binary" --x11 --validation --scene "$scripted_scene" --reload-test --resize-test --frames 90
+"$binary" script examples/scripts/garden-bot.lua "$scripted_scene"

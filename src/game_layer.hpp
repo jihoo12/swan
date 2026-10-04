@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 namespace swan {
 // Per-frame data the runtime hands to GUI layers. sceneTexture is an ImTextureID for the
 // renderer-owned image of the previous offscreen scene render (0 until one exists).
@@ -30,5 +31,7 @@ public:
     virtual bool running() const { return true; }
     // nullopt keeps the renderer's click-to-capture behavior; a value takes explicit control.
     virtual std::optional<bool> cursorCapture() const { return std::nullopt; }
+    // Log lines (e.g. from scripts) since the last call; the runtime prints them.
+    virtual std::vector<std::string> takeMessages() { return {}; }
 };
 }

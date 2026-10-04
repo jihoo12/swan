@@ -62,7 +62,7 @@ void EditorLayer::drawHierarchy() {
     }
     // Requests are applied after drawing; edits replace the scene that the loop is reading.
     std::optional<std::pair<std::string,std::optional<std::string>>> reparentRequest;
-    std::optional<std::pair<std::string,std::string>> materialRequest;
+    std::optional<std::pair<std::string,std::string>> materialRequest,scriptRequest;
     std::optional<std::string> selectRequest,focusRequest,deleteRequest,duplicateRequest;
     auto dropTarget=[&](const std::optional<std::string>& key) {
         if(!ImGui::BeginDragDropTarget()) return;
@@ -71,6 +71,7 @@ void EditorLayer::drawHierarchy() {
             if(!key || dragged!=*key) reparentRequest={dragged,key};
         }
         if(key) if(const auto* payload=ImGui::AcceptDragDropPayload("SWAN_MATERIAL")) materialRequest={*key,static_cast<const char*>(payload->Data)};
+        if(key) if(const auto* payload=ImGui::AcceptDragDropPayload("SWAN_SCRIPT")) scriptRequest={*key,static_cast<const char*>(payload->Data)};
         ImGui::EndDragDropTarget();
     };
     auto rowInteractions=[&](const Entity& entity) {
@@ -137,6 +138,7 @@ void EditorLayer::drawHierarchy() {
             ImGui::SameLine(0,6);
             ImGui::TextUnformatted(label(entity).c_str());
             if(entity.animation) {ImGui::SameLine(0,6);ImGui::TextColored(toVec4(theme::TextDim),"%s",icon::Sparkles);ImGui::SetItemTooltip("Animated");}
+            if(!entity.scriptId.empty()) {ImGui::SameLine(0,6);ImGui::TextColored(toVec4(IM_COL32(236,190,110,200)),"%s",icon::FileCode);ImGui::SetItemTooltip("Script: %s",entity.scriptId.c_str());}
             if(open) {for(auto kid:kids) node(kid);ImGui::TreePop();}
             ImGui::PopID();
         };
@@ -159,6 +161,7 @@ void EditorLayer::drawHierarchy() {
     if(focusRequest) {attempt([&]{document.select(*focusRequest);});focusSelection();}
     if(reparentRequest) reparent(reparentRequest->first,reparentRequest->second);
     if(materialRequest) assignMaterial(materialRequest->first,materialRequest->second);
+    if(scriptRequest) assignScript(scriptRequest->first,scriptRequest->second);
     if(duplicateRequest) duplicateSelection();
     if(deleteRequest) deleteSelection();
 }

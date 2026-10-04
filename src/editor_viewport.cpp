@@ -64,14 +64,18 @@ void EditorLayer::drawViewport(const GuiFrame& frame) {
             }
             createEntity(meshId,position);
         }
-        const auto* hoverMaterial=ImGui::AcceptDragDropPayload("SWAN_MATERIAL",ImGuiDragDropFlags_AcceptBeforeDelivery|ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
-        if(hoverMaterial) {
+        // Materials and scripts land on the entity under the cursor (outlined while hovering).
+        for(const char* type:{"SWAN_MATERIAL","SWAN_SCRIPT"}) {
+            const auto* hover=ImGui::AcceptDragDropPayload(type,ImGuiDragDropFlags_AcceptBeforeDelivery|ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
+            if(!hover) continue;
             auto key=pickEntity(scene,camera.camera(),local,{size.x,size.y});
-            if(!key.empty()) {
-                auto vp=camera.camera().viewProjection(size.x/size.y);
-                drawBounds(ImGui::GetWindowDrawList(),worldBounds(scene,scene.find(key)),vp,origin,size,theme::Warning,2);
-                if(hoverMaterial->IsDelivery()) assignMaterial(key,static_cast<const char*>(hoverMaterial->Data));
-            }
+            if(key.empty()) continue;
+            auto vp=camera.camera().viewProjection(size.x/size.y);
+            drawBounds(ImGui::GetWindowDrawList(),worldBounds(scene,scene.find(key)),vp,origin,size,theme::Warning,2);
+            if(!hover->IsDelivery()) continue;
+            std::string id(static_cast<const char*>(hover->Data));
+            if(std::string_view(type)=="SWAN_MATERIAL") assignMaterial(key,id); else assignScript(key,id);
+            break;
         }
         ImGui::EndDragDropTarget();
     }

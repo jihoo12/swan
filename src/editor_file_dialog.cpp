@@ -8,9 +8,9 @@
 #include <cstdlib>
 namespace swan {
 namespace {
-bool sceneFile(const std::filesystem::path& path) {
+bool matches(const std::filesystem::path& path,const std::string& extension) {
     auto name=path.filename().string();
-    return name.size()>5 && name.ends_with(".json");
+    return name.size()>extension.size() && name.ends_with(extension);
 }
 std::string humanSize(uintmax_t bytes) {
     char text[32];
@@ -20,14 +20,14 @@ std::string humanSize(uintmax_t bytes) {
     return text;
 }
 }
-void FileDialog::open(Mode next,const std::filesystem::path& initial,Accept accept) {
-    mode=next;onAccept=std::move(accept);requested=true;error.clear();
+void FileDialog::open(Mode next,const std::filesystem::path& initial,Accept accept,std::string filter) {
+    mode=next;onAccept=std::move(accept);requested=true;error.clear();extension=std::move(filter);
     std::error_code ec;
     auto start=initial.empty()?std::filesystem::current_path():std::filesystem::absolute(initial,ec);
     auto folder=std::filesystem::is_directory(start,ec)?start:start.parent_path();
     if(folder.empty() || !std::filesystem::is_directory(folder,ec)) folder=std::filesystem::current_path();
     std::snprintf(name.data(),name.size(),"%s",std::filesystem::is_directory(start,ec)?"":start.filename().string().c_str());
-    if(mode==Mode::Save && !name[0]) std::snprintf(name.data(),name.size(),"untitled.swan.json");
+    if(mode==Mode::Save && !name[0]) std::snprintf(name.data(),name.size(),"%s",extension==".lua"?"behaviour.lua":"untitled.swan.json");
     navigate(folder);
 }
 void FileDialog::navigate(const std::filesystem::path& next) {
@@ -39,7 +39,7 @@ void FileDialog::navigate(const std::filesystem::path& next) {
         auto filename=it->path().filename().string();
         if(filename.starts_with(".")) continue;
         bool folder=it->is_directory(ec);
-        if(!folder && !showAll && !sceneFile(it->path())) continue;
+        if(!folder && !showAll && !matches(it->path(),extension)) continue;
         listed.push_back({it->path(),folder,folder?0:it->file_size(ec)});
     }
     if(ec) {error="Cannot read folder: "+ec.message();return;}
@@ -58,7 +58,8 @@ void FileDialog::accept(const std::filesystem::path& path) {
     if(callback) callback(path);
 }
 void FileDialog::draw(const std::vector<std::filesystem::path>& recent) {
-    const char* title=mode==Mode::Open?"Open Scene###file-dialog":"Save Scene As###file-dialog";
+    bool script=extension==".lua";
+    const char* title=mode==Mode::Open?(script?"Import Script###file-dialog":"Open Scene###file-dialog"):(script?"New Script###file-dialog":"Save Scene As###file-dialog");
     if(requested) {ImGui::OpenPopup("###file-dialog");requested=false;isOpen=true;focusName=mode==Mode::Save;}
     auto* viewport=ImGui::GetMainViewport();
     float scale=ImGui::GetStyle().FontScaleMain;
@@ -88,6 +89,7 @@ void FileDialog::draw(const std::vector<std::filesystem::path>& recent) {
     };
     place(icon::Folder,"Working folder",std::filesystem::current_path());
     place(icon::Mountain,"Scenes",std::filesystem::current_path()/"assets/scenes");
+    place(icon::FileCode,"Scripts",std::filesystem::current_path()/"assets/scripts");
     if(const char* home=std::getenv("HOME")) place(icon::House,"Home",home);
     if(!recent.empty()) {
         ImGui::SeparatorText("Recent");

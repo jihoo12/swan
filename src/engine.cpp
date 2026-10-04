@@ -31,6 +31,7 @@ void Engine::run(GameLayer& game) {
         ++frames; ++titleFrames;
         if(options.resizeTest && frames==10) renderer.resize(960,640);
         if(options.resizeTest && frames==30) renderer.resize(1280,800);
+        for(const auto& line:game.takeMessages()) std::cout << line << '\n';
         auto status=game.status();
         if(status!=lastStatus) { std::cout << status << '\n'; lastStatus=status; }
         float titleElapsed=std::chrono::duration<float>(now-titleTime).count();

@@ -12,8 +12,7 @@ Garden gardenFromScene(Scene scene,glm::vec3 spawn) {
         }
         if(entity->collectible) garden.shards.push_back(id);
     }
-    if(!garden.scene.get(garden.core) || garden.shards.empty())
-        throw std::invalid_argument("Garden requires one goal and at least one collectible");
+    // Goals and collectibles are optional: scripted scenes may define their own objectives.
     return garden;
 }
 Garden makeGarden() {

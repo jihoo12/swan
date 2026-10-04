@@ -4,6 +4,7 @@
 #include "editor_theme.hpp"
 #include "fuzzy.hpp"
 #include <imgui.h>
+#include <imgui_stdlib.h>
 #include <cmath>
 #include <cstdio>
 namespace swan {
@@ -51,6 +52,8 @@ void EditorLayer::drawAssets() {
     std::vector<std::pair<std::string,std::string>> meshes;
     for(const auto& [id,mesh]:scene.meshes().entries()) meshes.push_back({id,mesh.source.empty()?"Built-in":mesh.source.filename().string()+(mesh.part?" (part "+std::to_string(mesh.part)+")":"")});
     std::vector<std::pair<std::string,Material>> materials(scene.assets().entries().begin(),scene.assets().entries().end());
+    std::vector<std::pair<std::string,std::string>> scripts;
+    for(const auto& [id,script]:scene.scripts().entries()) scripts.push_back({id,script.source.empty()?"In memory":script.source.string()});
     std::vector<std::pair<std::string,std::string>> textures;
     for(const auto& [id,texture]:scene.textures().entries()) textures.push_back({id,texture.source.empty()?"Built-in":texture.source.filename().string()});
     auto usage=[&](auto predicate){size_t n=0;for(auto id:scene.entities()) n+=predicate(*scene.get(id));return n;};
@@ -128,6 +131,37 @@ void EditorLayer::drawAssets() {
             });
             ImGui::EndTabItem();
         }
+        if(tab(icon::FileCode,"Scripts",scripts.size())) {
+            ImGui::BeginDisabled(!editable());
+            if(ImGui::Button((std::string(icon::Plus)+"  New Script...").c_str())) action=[this]{newScript();};
+            probe::item("assets/new-script");
+            ImGui::SameLine();
+            if(ImGui::Button((std::string(icon::FolderOpen)+"  Import...").c_str())) action=[this]{importScript();};
+            ImGui::EndDisabled();
+            ImGui::SameLine();ImGui::TextColored(toVec4(theme::TextDim),"Drag onto an entity to attach. Play reloads scripts from disk.");
+            std::vector<size_t> shown;
+            for(size_t i=0;i<scripts.size();++i) if(visible(scripts[i].first)) shown.push_back(i);
+            grid(shown.size(),[&](size_t index){
+                const auto& [id,source]=scripts[shown[index]];
+                ImGui::PushID(id.c_str());
+                bool open=assetTile(id,icon::FileCode,IM_COL32(236,190,110,255),84*lastScale,selected && selected->scriptId==id,nullptr);
+                probe::item("assets/script/"+id);
+                if(open && editable() && selected) action=[this,key=selected->key,id]{assignScript(key,id);};
+                if(editable() && ImGui::BeginDragDropSource()) {
+                    ImGui::SetDragDropPayload("SWAN_SCRIPT",id.c_str(),id.size()+1);
+                    ImGui::Text("%s  Attach %s",icon::FileCode,id.c_str());
+                    ImGui::EndDragDropSource();
+                }
+                if(ImGui::BeginItemTooltip()) {
+                    ImGui::TextUnformatted(id.c_str());
+                    ImGui::TextColored(toVec4(theme::TextDim),"%s",source.c_str());
+                    ImGui::TextColored(toVec4(theme::TextDim),"Used by %zu  \xc2\xb7  drag onto an entity or double-click to attach",usage([&](const Entity& e){return e.scriptId==id;}));
+                    ImGui::EndTooltip();
+                }
+                ImGui::PopID();
+            });
+            ImGui::EndTabItem();
+        }
         if(tab(icon::Image,"Textures",textures.size())) {
             std::vector<size_t> shown;
             for(size_t i=0;i<textures.size();++i) if(visible(textures[i].first)) shown.push_back(i);
@@ -153,12 +187,15 @@ void EditorLayer::drawAssets() {
 }
 void EditorLayer::drawConsole() {
     auto title=std::string(icon::Terminal)+"  Console"+(unreadErrors?"  ("+std::to_string(unreadErrors)+")":"")+"###Console";
+    // Bring a hidden tab forward first; the input is only submitted (and focusable) when visible.
+    if(focusConsole) ImGui::SetNextWindowFocus();
     if(!ImGui::Begin(title.c_str(),&showConsole)) {ImGui::End();return;}
     if(ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) || ImGui::IsWindowHovered()) unreadErrors=0;
     if(ImGui::Button((std::string(icon::Trash)+"  Clear").c_str())) {logs.clear();unreadErrors=0;}
     ImGui::SameLine();ImGui::TextColored(toVec4(theme::TextDim),"%zu messages",logs.size());
     ImGui::Separator();
-    ImGui::BeginChild("##log",{0,0});
+    float inputHeight=ImGui::GetFrameHeightWithSpacing();
+    ImGui::BeginChild("##log",{0,-inputHeight});
     if(ImGui::BeginTable("##entries",3,ImGuiTableFlags_RowBg|ImGuiTableFlags_SizingFixedFit)) {
         ImGui::TableSetupColumn("time",ImGuiTableColumnFlags_WidthFixed);
         ImGui::TableSetupColumn("level",ImGuiTableColumnFlags_WidthFixed);
@@ -177,7 +214,35 @@ void EditorLayer::drawConsole() {
     }
     if(ImGui::GetScrollY()>=ImGui::GetScrollMaxY()-4) ImGui::SetScrollHereY(1);
     ImGui::EndChild();
+    // Lua REPL bound to this document as `doc`; Up/Down walk the history.
+    ImGui::SetNextItemWidth(-FLT_MIN);
+    if(focusConsole) {ImGui::SetKeyboardFocusHere();focusConsole=false;}
+    auto history=[](ImGuiInputTextCallbackData* data)->int{
+        auto* self=static_cast<EditorLayer*>(data->UserData);
+        return self->consoleHistoryStep(data);
+    };
+    auto hint=std::string(icon::Terminal)+"  Lua: doc:create{name = \"Cube\", position = vec3(0, 1, 0)}";
+    if(ImGui::InputTextWithHint("##lua",hint.c_str(),&consoleInput,ImGuiInputTextFlags_EnterReturnsTrue|ImGuiInputTextFlags_CallbackHistory,history,this)) {
+        auto code=consoleInput;consoleInput.clear();
+        runConsole(code);
+        ImGui::SetKeyboardFocusHere(-1);
+    }
+    probe::item("console/input");
+    // With nothing typed, undo/redo apply to the document (e.g. right after running a command).
+    if(ImGui::IsItemActive() && consoleInput.empty()) {
+        if(ImGui::IsKeyChordPressed(ImGuiMod_Ctrl|ImGuiKey_Z)) actions.run("edit.undo");
+        if(ImGui::IsKeyChordPressed(ImGuiMod_Ctrl|ImGuiMod_Shift|ImGuiKey_Z) || ImGui::IsKeyChordPressed(ImGuiMod_Ctrl|ImGuiKey_Y)) actions.run("edit.redo");
+    }
     ImGui::End();
+}
+int EditorLayer::consoleHistoryStep(ImGuiInputTextCallbackData* data) {
+    if(consoleHistory.empty()) return 0;
+    int last=int(consoleHistory.size())-1;
+    if(data->EventKey==ImGuiKey_UpArrow) consoleHistoryIndex=consoleHistoryIndex<0?last:std::max(0,consoleHistoryIndex-1);
+    else if(data->EventKey==ImGuiKey_DownArrow) consoleHistoryIndex=consoleHistoryIndex<0||consoleHistoryIndex>=last?-1:consoleHistoryIndex+1;
+    data->DeleteChars(0,data->BufTextLen);
+    if(consoleHistoryIndex>=0) data->InsertChars(0,consoleHistory[consoleHistoryIndex].c_str());
+    return 0;
 }
 void EditorLayer::drawHistory() {
     auto title=std::string(icon::History)+"  History###History";
