@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.12 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.13 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -205,3 +205,16 @@ Version 0.12 introduces an [Assimp-backed](https://github.com/assimp/assimp) sta
 This first importer deliberately handles **static geometry**. Scene materials/PNG references supply appearance; glTF PBR materials, embedded textures, cameras/lights, additional UV sets, and vertex colors are not imported. Animation, skins, morph targets, nontriangle geometry, and singular/nonaffine transforms are rejected. Imported model nodes are baked, not editable runtime scene nodes. Full matrix/quaternion runtime transforms and material import remain the next glTF integration work before the minimal editor milestone. Source files are limited to 32 MiB; decoded geometry is checked after Assimp parsing for 256 node primitives and one million triangle corners.
 
 Gameplay action shortcuts ignore Ctrl, Alt, and Super modifiers; **Ctrl+F does not toggle flight or change the camera**. Bare F still enters the free-flight camera and returns to walking; the first/third-person preference is retained and V explicitly changes it. Shift is allowed with action keys so sprinting does not prevent jump or mode changes.
+
+Version 0.13 adds the editor's document/command layer before GUI integration. `EditorDocument` owns an authored scene, stable-key selection, transactional transform/material/parent/create/delete commands, and bounded undo/redo (64 snapshots by default, up to 256). Invalid edits preserve the scene and history. Mesh/texture data stays shared between snapshots. Frontends must discard entity handles after document revisions and resolve stable keys again.
+
+Play starts from an independent scene copy; gameplay mutation does not affect authored data. Stop discards runtime changes, saving always uses authored data, and editing is blocked during play. Loading clears selection/history only after successful validation. This is a CPU API, not a GUI editor yet; the next editor step can attach hierarchy and inspector widgets to these commands.
+
+A headless frontend exercises the same command API:
+
+```bash
+./build/swan-scene assets/scenes/playground.swan.json /tmp/edited.swan.json assets/edits/move-pedestal.json
+./build/swan --third-person --scene /tmp/edited.swan.json
+```
+
+`swan-scene INPUT OUTPUT EDITS.json` supports `transform` (id, position, scale, yaw), `parent` (id, parent key or null), `delete` (id), `undo`, and `redo`. It validates a batch before saving once; a failed command leaves the output file intact. Edit files are limited to 1 MiB and 256 commands. Material/create commands are available through the CPU API and will be exposed by the GUI inspector. History uses scene snapshots, so large documents have corresponding CPU memory costs; assets are not reread during edit validation.

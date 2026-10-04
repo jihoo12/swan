@@ -48,6 +48,17 @@ EntityId Scene::create(Entity entity) {
     ++liveCount;
     return {index,slots[index].generation};
 }
+void Scene::validate() const {
+    Scene checked;
+    checked.materialAssets=materialAssets; checked.meshAssets=meshAssets; checked.textureAssets=textureAssets;
+    std::vector<EntityId> mapped(slots.size());
+    for(auto id:entities()) mapped[id.index]=checked.create(*get(id));
+    for(auto id:entities()) if(auto ancestor=parent(id)) {
+        if(!get(*ancestor)) throw std::invalid_argument("Invalid hierarchy parent");
+        checked.slots[mapped[id.index].index].parent=mapped[ancestor->index];
+    }
+    for(auto id:checked.entities()) checked.worldTransform(id);
+}
 EntityId Scene::find(const std::string& key) const {
     for(uint32_t i=0;i<slots.size();++i)
         if(slots[i].entity && slots[i].entity->key==key) return {i,slots[i].generation};

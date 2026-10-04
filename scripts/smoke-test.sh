@@ -99,3 +99,14 @@ if [[ -f "$installed_gltf" ]]; then gltf_scene="$installed_gltf"; fi
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$gltf_scene" --export-scene "$work/gltf.json"
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/gltf.json"
 timeout 60s "$binary" --x11 --validation --verify-mesh-uploads --third-person --scene "$work/gltf.json" --reload-test --resize-test --frames 90
+editor_binary="$(dirname "$(readlink -f "$binary")")/swan-scene"
+env -u DISPLAY -u WAYLAND_DISPLAY "$editor_binary" assets/scenes/playground.swan.json "$work/edited.json" assets/edits/move-pedestal.json
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/edited.json"
+python3 - "$work/edited.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+scene = json.loads(Path(sys.argv[1]).read_text())
+entity = next(entity for entity in scene['entities'] if entity['id'] == 'pedestal')
+assert all(abs(a-b) < 1e-6 for a, b in zip(entity['transform']['position'], [2, 0.3, 0]))
+PY

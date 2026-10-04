@@ -112,3 +112,7 @@ Parts follow Assimp's depth-first node traversal, then each node's primitive ord
 The fixture is locally authored and ships as both JSON glTF with an embedded buffer and binary GLB. Scene materials supply color and PNG texture appearance; imported glTF materials/textures are currently ignored. Node animation, skins, morph targets, nontriangle geometry, and singular/nonaffine transforms are unsupported. UV0 is supported. Export retains source/part references and rebases paths; external glTF buffers must remain available alongside their source. Versions 1–4 remain readable but cannot declare glTF sources or part selectors. Runtime entities still use yaw transforms; imported nodes are not independently editable yet.
 
 The glTF garden's `left-pillar` and `right-pillar` sculptures deliberately have `"solid": false`, so the player and follow camera pass through them. Set either entity to `"solid": true` and press F5 to enable collision. glTF uses the same transformed local-bounds box proxy as OBJ and built-in meshes; it is not triangle-surface collision. No importer change is required. Animated colliders remain unsupported.
+
+## Headless scene editing
+
+`edits/move-pedestal.json` demonstrates a transform edit followed by undo and redo. Run `./build/swan-scene assets/scenes/playground.swan.json /tmp/edited.swan.json assets/edits/move-pedestal.json`. Output uses the current scene schema, with source paths rebased to the output directory. The full command batch must succeed before the output is saved. Entity references in edits use stable `id` keys.

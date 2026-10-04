@@ -1,0 +1,5 @@
+[
+  { "op": "transform", "id": "pedestal", "position": [2, 0.3, 0], "scale": [3, 0.6, 3], "yaw": 0.3 },
+  { "op": "undo" },
+  { "op": "redo" }
+]

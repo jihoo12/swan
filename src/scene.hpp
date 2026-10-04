@@ -30,6 +30,8 @@ struct Entity {
 class Scene {
 public:
     EntityId create(Entity entity);
+    // Validate mutable entities and hierarchy without reopening source assets.
+    void validate() const;
     EntityId find(const std::string& key) const;
     MaterialAssets& assets() { return materialAssets; }
     const MaterialAssets& assets() const { return materialAssets; }
