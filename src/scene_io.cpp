@@ -36,7 +36,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     try {
         const auto root=Json::parse(text);
         keys(root,{"format","version","spawn","materials","meshes","textures","entities"});
-        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || (root.at("version")!=1 && root.at("version")!=2 && root.at("version")!=3 && root.at("version")!=4))
+        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || (root.at("version")!=1 && root.at("version")!=2 && root.at("version")!=3 && root.at("version")!=4 && root.at("version")!=5))
             throw std::invalid_argument("Unsupported scene format/version");
         SceneDocument document;
         document.spawn=vector(root.at("spawn"));
@@ -62,10 +62,19 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
             if(!meshes.is_object()) throw std::invalid_argument("Meshes must be an object");
             auto base=baseDirectory.empty()?std::filesystem::current_path():baseDirectory;
             for(auto it=meshes.begin();it!=meshes.end();++it) {
-                keys(it.value(),{"source"});
+                keys(it.value(),{"source","part"});
+                uint32_t part=0;
+                if(it.value().contains("part")) {
+                    const auto& value=it.value().at("part");
+                    if(root.at("version")<5 || !value.is_number_integer() || value.get<int64_t>()<0 || value.get<int64_t>()>255)
+                        throw std::invalid_argument("Mesh part requires version 5 and integer 0..255");
+                    part=value.get<uint32_t>();
+                }
                 auto source=it.value().at("source").get<std::string>();
                 if(source.empty()) throw std::invalid_argument("Mesh source cannot be empty");
-                document.scene.meshes().load(it.key(),base/std::filesystem::path(source));
+                auto path=base/std::filesystem::path(source);
+                if(root.at("version")<5 && (path.extension()==".gltf" || path.extension()==".glb")) throw std::invalid_argument("glTF requires scene version 5");
+                document.scene.meshes().load(it.key(),path,part);
             }
         }
         if(root.contains("textures")) {
@@ -116,7 +125,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     } catch(const std::exception& e) { throw std::invalid_argument(std::string("Invalid Swan scene: ")+e.what()); }
 }
 std::string serializeScene(const SceneDocument& document,const std::filesystem::path& baseDirectory) {
-    Json root={{"format","swan-scene"},{"version",4},{"spawn",vector(document.spawn)},
+    Json root={{"format","swan-scene"},{"version",5},{"spawn",vector(document.spawn)},
                {"materials",Json::object()},{"meshes",Json::object()},{"textures",Json::object()},{"entities",Json::array()}};
     for(const auto& [id,material]:document.scene.assets().entries())
         root["materials"][id]={{"color",vector(material.color)},{"emission",material.emission},
@@ -126,6 +135,7 @@ std::string serializeScene(const SceneDocument& document,const std::filesystem::
         std::error_code error;
         auto relative=std::filesystem::relative(mesh.source,base,error);
         root["meshes"][id]={{"source",(error?mesh.source:relative).generic_string()}};
+        if(mesh.source.extension()==".gltf" || mesh.source.extension()==".glb") root["meshes"][id]["part"]=mesh.part;
     }
     for(const auto& [id,texture]:document.scene.textures().entries()) if(!texture.source.empty()) {
         std::error_code error; auto relative=std::filesystem::relative(texture.source,base,error);

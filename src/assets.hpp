@@ -1,19 +1,21 @@
 #pragma once
 #include "mesh.hpp"
+#include "model.hpp"
 #include "texture.hpp"
 #include <map>
 #include <string>
 namespace swan {
-struct MeshAsset { std::filesystem::path source; SharedMesh data; };
+struct MeshAsset { std::filesystem::path source; SharedMesh data; uint32_t part=0; };
 class MeshAssets {
 public:
     MeshAssets();
-    void load(std::string id,const std::filesystem::path& path);
+    void load(std::string id,const std::filesystem::path& path,uint32_t part=0);
     const MeshAsset& get(const std::string& id) const;
     bool contains(const std::string& id) const { return meshes.contains(id); }
     const std::map<std::string,MeshAsset>& entries() const { return meshes; }
 private:
     std::map<std::string,MeshAsset> meshes;
+    std::map<std::filesystem::path,StaticModel> models;
 };
 struct TextureAsset { std::filesystem::path source; SharedTexture data; };
 class TextureAssets {

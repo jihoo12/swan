@@ -1,0 +1,260 @@
+{
+  "format": "swan-scene",
+  "version": 5,
+  "spawn": [
+    0,
+    0.2,
+    7
+  ],
+  "materials": {
+    "floor": {
+      "color": [
+        0.7,
+        0.85,
+        0.9
+      ],
+      "emission": 0,
+      "texture": "stone-tiles",
+      "uv_scale": [
+        8,
+        8
+      ]
+    },
+    "stone": {
+      "color": [
+        0.9,
+        0.9,
+        0.85
+      ],
+      "emission": 0,
+      "texture": "stone-tiles",
+      "uv_scale": [
+        1,
+        3
+      ]
+    },
+    "crystal": {
+      "color": [
+        0.1,
+        0.85,
+        1
+      ],
+      "emission": 2.5
+    },
+    "gold": {
+      "color": [
+        1,
+        0.65,
+        0.12
+      ],
+      "emission": 1.8
+    }
+  },
+  "entities": [
+    {
+      "id": "floor",
+      "name": "Courtyard",
+      "mesh": "builtin:cube",
+      "material": "floor",
+      "transform": {
+        "position": [
+          0,
+          -0.4,
+          0
+        ],
+        "scale": [
+          24,
+          0.8,
+          24
+        ],
+        "yaw": 0
+      },
+      "solid": true
+    },
+    {
+      "id": "pedestal",
+      "name": "Crystal pedestal",
+      "mesh": "builtin:cube",
+      "material": "stone",
+      "transform": {
+        "position": [
+          0,
+          0.3,
+          0
+        ],
+        "scale": [
+          3,
+          0.6,
+          3
+        ],
+        "yaw": 0
+      },
+      "solid": true
+    },
+    {
+      "id": "core",
+      "name": "Garden heart",
+      "mesh": "crystal-mesh",
+      "material": "crystal",
+      "transform": {
+        "position": [
+          0,
+          3.2,
+          0
+        ],
+        "scale": [
+          1.5,
+          1.5,
+          1.5
+        ],
+        "yaw": 0
+      },
+      "goal": true,
+      "animation": {
+        "base_height": 3.2,
+        "phase": 0,
+        "bob": 0.35,
+        "speed": 0.5
+      }
+    },
+    {
+      "id": "left-pillar",
+      "name": "Left pillar",
+      "mesh": "gltf-left",
+      "material": "stone",
+      "transform": {
+        "position": [
+          0,
+          2,
+          -2
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "yaw": 0
+      },
+      "solid": false
+    },
+    {
+      "id": "right-pillar",
+      "name": "Right pillar",
+      "mesh": "gltf-right",
+      "material": "stone",
+      "transform": {
+        "position": [
+          0,
+          2,
+          -2
+        ],
+        "scale": [
+          1,
+          1,
+          1
+        ],
+        "yaw": 0
+      },
+      "solid": false
+    },
+    {
+      "id": "shard-1",
+      "name": "Near shard",
+      "mesh": "crystal-mesh",
+      "material": "gold",
+      "transform": {
+        "position": [
+          0,
+          1.2,
+          4
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ],
+        "yaw": 0
+      },
+      "collectible": true,
+      "animation": {
+        "base_height": 1.2,
+        "phase": 0,
+        "bob": 0.15,
+        "speed": 1
+      }
+    },
+    {
+      "id": "shard-2",
+      "name": "Left shard",
+      "mesh": "crystal-mesh",
+      "material": "gold",
+      "transform": {
+        "position": [
+          -4,
+          1.2,
+          3
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ],
+        "yaw": 0
+      },
+      "collectible": true,
+      "animation": {
+        "base_height": 1.2,
+        "phase": 1,
+        "bob": 0.15,
+        "speed": 1
+      }
+    },
+    {
+      "id": "shard-3",
+      "name": "Right shard",
+      "mesh": "crystal-mesh",
+      "material": "gold",
+      "transform": {
+        "position": [
+          4,
+          1.2,
+          3
+        ],
+        "scale": [
+          0.6,
+          0.6,
+          0.6
+        ],
+        "yaw": 0
+      },
+      "collectible": true,
+      "animation": {
+        "base_height": 1.2,
+        "phase": 2,
+        "bob": 0.15,
+        "speed": 1
+      }
+    }
+  ],
+  "meshes": {
+    "crystal-mesh": {
+      "source": "../meshes/crystal.obj"
+    },
+    "pillar-mesh": {
+      "source": "../meshes/pillar.obj"
+    },
+    "gltf-left": {
+      "source": "../models/sculpture.gltf",
+      "part": 0
+    },
+    "gltf-right": {
+      "source": "../models/sculpture.gltf",
+      "part": 1
+    }
+  },
+  "textures": {
+    "stone-tiles": {
+      "source": "../textures/courtyard.png"
+    }
+  }
+}

@@ -92,3 +92,10 @@ PY
 
 timeout 60s "$binary" --x11 --validation --third-person --frames 90 --resize-test
 timeout 60s "$binary" --x11 --validation --third-person --scene "$work/hierarchy.json" --reload-test --resize-test --frames 90
+
+gltf_scene=assets/scenes/gltf-garden.swan.json
+installed_gltf="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/gltf-garden.swan.json"
+if [[ -f "$installed_gltf" ]]; then gltf_scene="$installed_gltf"; fi
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$gltf_scene" --export-scene "$work/gltf.json"
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/gltf.json"
+timeout 60s "$binary" --x11 --validation --verify-mesh-uploads --third-person --scene "$work/gltf.json" --reload-test --resize-test --frames 90

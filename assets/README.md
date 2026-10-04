@@ -6,7 +6,7 @@
 ./build/swan --scene assets/scenes/playground.swan.json
 ```
 
-A scene file contains `format: "swan-scene"`, integer `version: 1`, `2`, `3`, or `4`, a `spawn` feet position, named `materials`, and `entities`. All vectors use three numeric components. Positions/scales use world units; `yaw` is in radians. Material colors are nonnegative linear RGB values; `emission` is a nonnegative multiplier.
+A scene file contains `format: "swan-scene"`, integer `version: 1`, `2`, `3`, `4`, or `5`, a `spawn` feet position, named `materials`, and `entities`. All vectors use three numeric components. Positions/scales use world units; `yaw` is in radians. Material colors are nonnegative linear RGB values; `emission` is a nonnegative multiplier.
 
 Each entity requires a unique stable `id`, a `name`, a `mesh` asset ID (`builtin:cube` is always available), a named `material`, and a `transform` containing `position`, positive `scale`, and `yaw`. Runtime generation handles are rebuilt when loading; stable file IDs remain unchanged.
 
@@ -36,7 +36,7 @@ Entities reference `"mesh": "crystal-mesh"`. Source paths are resolved relative 
 
 The OBJ subset accepts triangular faces, positive/negative position and normal indices, and optional normals. Supplied normals are normalized; missing normals are generated per face for flat shading. Triangulate meshes in your authoring tool before export. Non-triangle faces, line/point primitives, invalid position/normal indices, degenerate triangles, and invalid normals are rejected. Files are limited to 32 MiB and 1,000,000 triangle corners. UVs are retained and the V coordinate is flipped to match PNG row order. Missing UVs default to (0, 0). Vertex colors, smoothing groups, and MTL files are not used; appearance comes from scene materials. Bounds are computed from referenced vertices; solid meshes collide using a rotated box proxy, not exact triangle collision.
 
-Export writes version 4 and rebases mesh/texture sources relative to the output directory. It preserves references rather than copying OBJ/PNG files. Keep referenced files available when moving or sharing a scene. Existing version 1 scenes still load; version 1 does not allow a `meshes` table.
+Export writes version 5 and rebases mesh/texture sources relative to the output directory. It preserves references rather than copying OBJ/PNG files. Keep referenced files available when moving or sharing a scene. Existing version 1 scenes still load; version 1 does not allow a `meshes` table.
 
 GPU resources use a shared buffer containing vertices and 32-bit indices. Buffers are uploaded once per resource and old ones are freed after the frame fence. `--reload-test --frames 90` triggers F5-style reloads after 10 and 30 frames for validation; use it with `--scene` to exercise mesh replacement.
 
@@ -88,6 +88,27 @@ Scene paths are explicit and relative to the working directory when not absolute
 
 Mipmaps are generated automatically down to 1x1 in linear RGB, with linear alpha averaging. Vulkan uses trilinear filtering across these levels. No scene schema change or authored mip files are needed.
 
-Scene version 4 adds an optional `"parent": "entity-id"` field to each entity. Transforms and animation heights are local to that parent. Parents may appear later in the file. Missing parents, cycles, nonuniform parent scales, and animated ancestors of solid colliders are rejected. The `hierarchy-garden.swan.json` example groups the collectible shards under a rotating crystal. Export writes version 4 and keeps local transforms and stable parent references.
+Scene version 4 adds an optional `"parent": "entity-id"` field to each entity. Transforms and animation heights are local to that parent. Parents may appear later in the file. Missing parents, cycles, nonuniform parent scales, and animated ancestors of solid colliders are rejected. The `hierarchy-garden.swan.json` example groups the collectible shards under a rotating crystal. Export writes version 5 and keeps local transforms and stable parent references.
 
 Mesh vertex/index buffers use device-local storage with temporary staging uploads. To verify the complete uploaded bytes during development, run with `--verify-mesh-uploads`. Sharing and reload behavior remain unchanged.
+
+## Static glTF geometry
+
+```bash
+./build/swan --third-person --scene assets/scenes/gltf-garden.swan.json
+```
+
+Scene version 5 supports `.gltf` and `.glb` mesh sources with a zero-based `part` selector:
+
+```json
+"meshes": {
+  "sculpture-left": { "source": "../models/sculpture.gltf", "part": 0 },
+  "sculpture-right": { "source": "../models/sculpture.gltf", "part": 1 }
+}
+```
+
+Parts follow Assimp's depth-first node traversal, then each node's primitive order. Selection refers to a node primitive instance, not directly to the source file's mesh index. Node translation, quaternion rotation, matrix transforms, and positive/negative nonuniform scales are baked into geometry; normals and winding follow the transformed surface. The entity transform then moves the entire baked part. Parts from one resolved file share one decoded model catalog; aliases selecting the same part share CPU/GPU meshes. Reload rebuilds the catalog, and failed imports leave the live world unchanged.
+
+The fixture is locally authored and ships as both JSON glTF with an embedded buffer and binary GLB. Scene materials supply color and PNG texture appearance; imported glTF materials/textures are currently ignored. Node animation, skins, morph targets, nontriangle geometry, and singular/nonaffine transforms are unsupported. UV0 is supported. Export retains source/part references and rebases paths; external glTF buffers must remain available alongside their source. Versions 1–4 remain readable but cannot declare glTF sources or part selectors. Runtime entities still use yaw transforms; imported nodes are not independently editable yet.
+
+The glTF garden's `left-pillar` and `right-pillar` sculptures deliberately have `"solid": false`, so the player and follow camera pass through them. Set either entity to `"solid": true` and press F5 to enable collision. glTF uses the same transformed local-bounds box proxy as OBJ and built-in meshes; it is not triangle-surface collision. No importer change is required. Animated colliders remain unsupported.

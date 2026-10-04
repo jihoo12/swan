@@ -1,4 +1,5 @@
 #include "renderer.hpp"
+#include "key_bindings.hpp"
 #include "visibility.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -39,21 +40,14 @@ void VulkanRenderer::initialize() {
     window=glfwCreateWindow(1280,800,"SWAN",nullptr,nullptr);
     if(!window) throw std::runtime_error("Cannot create window");
     glfwSetWindowUserPointer(window,this);
-    glfwSetKeyCallback(window,[](GLFWwindow* w,int key,int,int action,int){
+    glfwSetKeyCallback(window,[](GLFWwindow* w,int key,int,int action,int modifiers){
         auto& e=*static_cast<VulkanRenderer*>(glfwGetWindowUserPointer(w));
         if(action!=GLFW_PRESS) return;
         if(key==GLFW_KEY_ESCAPE) {
             if(e.captured) { e.captured=false; glfwSetInputMode(w,GLFW_CURSOR,GLFW_CURSOR_NORMAL); }
             else glfwSetWindowShouldClose(w,GLFW_TRUE);
         }
-        if(key==GLFW_KEY_SPACE) e.input.jump=true;
-        if(key==GLFW_KEY_P) e.input.pause=true;
-        if(key==GLFW_KEY_R) e.input.reset=true;
-        if(key==GLFW_KEY_F) e.input.toggleFlight=true;
-        if(key==GLFW_KEY_V) e.input.toggleCamera=true;
-        if(key==GLFW_KEY_E) e.input.interact=true;
-        if(key==GLFW_KEY_F5) e.input.reload=true;
-        if(key==GLFW_KEY_F6) e.input.save=true;
+        applyActionKey(e.input,key,action,modifiers);
     });
     glfwSetMouseButtonCallback(window,[](GLFWwindow* w,int button,int action,int){
         auto& e=*static_cast<VulkanRenderer*>(glfwGetWindowUserPointer(w));
@@ -75,7 +69,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,11,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,12,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;

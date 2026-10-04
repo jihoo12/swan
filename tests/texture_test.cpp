@@ -47,7 +47,7 @@ int main() {
         auto loaded=swan::loadScene(scenePath);
         require(loaded.scene.textures().get("stone-tiles").source==std::filesystem::canonical(local),"Export did not rebase texture path");
         auto text=swan::serializeScene(loaded); auto json=nlohmann::json::parse(text);
-        require(json["version"]==4,"Texture export has wrong schema version");
+        require(json["version"]==5,"Texture export has wrong schema version");
         auto legacy=json; legacy["version"]=2; legacy.erase("textures");
         for(auto& material:legacy["materials"]) {material.erase("texture"); material.erase("uv_scale");}
         require(swan::parseScene(legacy.dump()).scene.size()==8,"Legacy version 2 mesh scene no longer loads");

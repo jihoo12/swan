@@ -3,17 +3,28 @@
 #include <stdexcept>
 namespace swan {
 MeshAssets::MeshAssets() { meshes.emplace("builtin:cube",MeshAsset{{},cubeMesh()}); }
-void MeshAssets::load(std::string id,const std::filesystem::path& path) {
+void MeshAssets::load(std::string id,const std::filesystem::path& path,uint32_t part) {
     if(id.empty() || id.size()>256 || id.starts_with("builtin:")) throw std::invalid_argument("Invalid mesh asset ID: "+id);
     auto source=std::filesystem::canonical(path);
     // Deduplicate by resolved path within a catalog; reload builds a fresh catalog.
     SharedMesh data;
     for(const auto& [name,existing]:meshes) {
         (void)name;
-        if(existing.source==source) { data=existing.data; break; }
+        if(existing.source==source && existing.part==part) { data=existing.data; break; }
     }
-    if(!data) data=loadObjMesh(source);
-    meshes.insert_or_assign(std::move(id),MeshAsset{std::move(source),std::move(data)});
+    if(!data) {
+        auto extension=source.extension().string();
+        if(extension==".gltf" || extension==".glb") {
+            auto found=models.find(source);
+            if(found==models.end()) found=models.emplace(source,loadStaticGltf(source)).first;
+            if(part>=found->second.parts.size()) throw std::invalid_argument("glTF part index out of range");
+            data=found->second.parts[part];
+        } else {
+            if(part!=0) throw std::invalid_argument("OBJ does not support part selection");
+            data=loadObjMesh(source);
+        }
+    }
+    meshes.insert_or_assign(std::move(id),MeshAsset{std::move(source),std::move(data),part});
 }
 const MeshAsset& MeshAssets::get(const std::string& id) const {
     auto found=meshes.find(id);
