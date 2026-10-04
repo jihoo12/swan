@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.14 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine with a docking scene editor. Version 0.15 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -32,7 +32,13 @@ nix build path:.
 ./result/bin/swan
 ```
 
-SPIR-V shaders are installed alongside the executable. Shader lookup uses the installed executable's location, then the CMake build directory. `--shader-dir PATH` overrides it.
+To open the editor straight from the flake (no checkout build needed):
+
+```sh
+nix run path:.#editor -- assets/scenes/gltf-garden.swan.json
+```
+
+SPIR-V shaders and editor fonts are installed alongside the executable. Shader lookup uses the installed executable's location, then the CMake build directory. `--shader-dir PATH` overrides it.
 
 ## Scene files and material assets
 
@@ -109,9 +115,11 @@ To implement another game, derive from `GameLayer` and implement `handleInput`, 
 - Swapchain/depth recreation on resize and waiting while minimized.
 - One frame in flight, one frame fence, one acquire semaphore, and a presentation semaphore per swapchain image; shared depth use remains serialized.
 - Optional Khronos validation with runtime errors producing a nonzero exit status.
+- The window surface prefers a UNORM format; the scene shader encodes sRGB itself (a specialization constant), so Dear ImGui's sRGB-authored colors are not encoded twice. Hardware-sRGB surfaces remain supported.
+- In the editor, the scene renders into an offscreen color/depth target sized to the Viewport panel, then the GUI samples it. The target is resized between frames, after the frame fence.
 - Upright capsule against static boxes rotated around the vertical axis. Movement is subdivided and contacts iteratively resolved, including floor, ceiling, and wall sliding. Imported meshes use a box proxy derived from their local bounds, transformed by the entity scale and yaw.
 
-This is an early engine foundation. Collision is a character controller, not a general rigid-body simulator; it has no dynamic bodies, arbitrary mesh collision, or automatic stair climbing. OBJ import currently requires triangles and supports positions plus optional normals. Missing normals use flat shading; UVs are retained, with OBJ V coordinates flipped to match PNG rows. Vertex colors, smoothing groups, and OBJ/MTL materials do not affect rendering. PNG base-color textures are supported; alpha is currently ignored and all geometry remains opaque. There is no glTF material import, skeletal animation, audio, GUI editor, shadow mapping, or bloom yet. The crystal's emission changes its surface color without a bloom pass. These systems can be added on top of the existing scene/game/renderer boundaries.
+This is an early engine foundation. Collision is a character controller, not a general rigid-body simulator; it has no dynamic bodies, arbitrary mesh collision, or automatic stair climbing. OBJ import currently requires triangles and supports positions plus optional normals. Missing normals use flat shading; UVs are retained, with OBJ V coordinates flipped to match PNG rows. Vertex colors, smoothing groups, and OBJ/MTL materials do not affect rendering. PNG base-color textures are supported; alpha is currently ignored and all geometry remains opaque. There is no glTF material import, skeletal animation, audio, shadow mapping, or bloom yet. The crystal's emission changes its surface color without a bloom pass. These systems can be added on top of the existing scene/game/renderer boundaries.
 
 ## Verification
 
@@ -143,7 +151,7 @@ nix flake check path:.
 ./build/swan --help
 ```
 
-`nix flake check` builds the package and runs five CPU test executables and three headless example validation tests. Graphical smoke tests are separate.
+`nix flake check` builds the package and runs every CPU test executable plus the headless example validations. Graphical smoke tests and the editor GUI test are separate.
 
 ## Layout
 
@@ -162,7 +170,13 @@ nix flake check path:.
 | `src/game.*`, `src/garden.*` | Sample gameplay and procedural content |
 | `src/renderer.*`, `src/renderer_texture.cpp` | GLFW and Vulkan buffers/images/descriptors |
 | `shaders/scene.vert`, `shaders/scene.frag` | Geometry, transforms, lighting, fog |
-| `tests/`, `scripts/smoke-test.sh` | CPU and graphical verification |
+| `src/renderer_gui.cpp`, `src/renderer_target.cpp` | Dear ImGui backend and the offscreen editor viewport target |
+| `src/editor_document.*`, `src/editor_view.*`, `src/editor_camera.*` | CPU editor core: transactions/previews, picking and gizmo math, navigation |
+| `src/editor_settings.*`, `src/fuzzy.*`, `src/resources.*` | Per-user preferences, palette ranking, installed resource lookup |
+| `src/editor_layer.*` | Editor frame, menus, toolbar, status bar, dock layout, actions, operations |
+| `src/editor_{hierarchy,inspector,viewport,panels}.cpp` | Editor panels (Assets, Console, and History live in `editor_panels.cpp`) |
+| `src/editor_{actions,file_dialog,theme,probe}.*`, `src/editor_icons.hpp` | Action registry and palette, scene browser, theme/fonts, GUI test probe |
+| `tests/`, `scripts/smoke-test.sh`, `scripts/editor-ui-test.sh` | CPU, graphical, and real-input editor verification |
 
 ## Driver troubleshooting
 
@@ -219,18 +233,48 @@ A headless frontend exercises the same command API:
 
 `swan-scene INPUT OUTPUT EDITS.json` supports `transform` (id, position, scale, yaw), `parent` (id, parent key or null), `delete` (id), `undo`, and `redo`. It validates a batch before saving once; a failed command leaves the output file intact. Edit files are limited to 1 MiB and 256 commands. Material/create commands are available through the CPU API and will be exposed by the GUI inspector. History uses scene snapshots, so large documents have corresponding CPU memory costs; assets are not reread during edit validation.
 
-Version 0.14 adds the first Dear ImGui editor overlay:
+Version 0.14 added the first Dear ImGui editor on top of that command layer; version 0.15 replaces its fixed side panels with the docking editor described below.
+
+## Scene editor
 
 ```bash
-./build/swan editor
-# Open an existing scene:
-./build/swan editor assets/scenes/gltf-garden.swan.json
+./build/swan editor                                      # empty scene
+./build/swan editor assets/scenes/gltf-garden.swan.json  # open a scene
 ```
 
-The left panel lists entities with hierarchy indentation, selection, Add cube/Delete, Undo/Redo, save path, source reload, and Play/Stop. The inspector edits local position, scale, and yaw; **Apply transform** commits one validated undoable command. Materials are displayed read-only in this first UI. Save always writes authored data, even during play. Play currently runs the garden game and requires its goal/collectible roles; scenes without those roles remain editable, and Play reports an error. Stop restores the authored preview.
+![Swan's scene editor](docs/editor.png)
 
-Right-click the scene background to capture mouse look, WASD moves the editor camera, Space/Ctrl changes altitude, and Escape releases the mouse. UI mouse/keyboard capture suppresses camera/game input while interacting with panels. The UI renders through Dear ImGui's GLFW/Vulkan backends as a separate overlay pass; swapchain resize recreates its Vulkan backend after GPU completion. The inspector supports names, mesh/material assignment, gameplay flags, parent changes, and shared material color/emission/texture/UV editing. Duplicate creates an independent entity with a new stable key and retains its parent. Focus selection moves the camera toward the selected object; the hierarchy can be filtered by name or key. Apply buttons commit one undoable transaction; invalid changes preserve the scene. Parent changes retain local transforms. Click a visible mesh to select its nearest surface; clicking empty space clears selection. A marker identifies the selected object. New cubes appear five units ahead of the camera and are selected immediately. `swan editor` opens an empty scene, and `swan editor PATH` opens an existing scene. The Scene file field supports Open scene and Save authored scene without command-line save options; the default destination is the opened file or `scene.swan.json` for a new scene. The legacy `--editor`, `--scene`, and `--save-scene` flags remain supported. No docking, gizmo, file browser, or selection outline is included yet.
+The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets**, **Console**, and **History** can be rearranged, tabbed, or closed (View menu reopens them; *View > Reset Layout* restores the default). The layout, recent files, camera speed, snapping, and UI size persist per user in `$XDG_CONFIG_HOME/swan` (`~/.config/swan`), or `$SWAN_CONFIG_HOME` when set — never in scene files.
 
-![Swan's initial GUI editor](docs/editor.png)
+**Editing is live.** Inspector drags, typed values, color pickers, and gizmo drags update the scene immediately as an uncommitted preview; releasing the widget commits exactly one undo step (*Move Crystal pedestal*, *Edit material gold*, ...). A drag that ends where it started, or a text edit cancelled with Esc, adds no history. Invalid intermediate values (e.g. a zero scale while typing) keep the last valid preview and are reported in the Console. There are no Apply buttons.
 
-Run `nix develop --command bash scripts/editor-ui-test.sh` for a real Xvfb mouse/keyboard test: select an entity, edit a transform, undo/redo, save, and Play/Stop. The test checks saved data and Vulkan validation output.
+| Task | How |
+| --- | --- |
+| Command palette (every action, entities, recent files) | **Ctrl+K** or Ctrl+Shift+P, type, Enter |
+| Move / Rotate (Y) / Scale gizmo, select only | **W / E / R**, Q; **X** toggles world/local; magnet toggles snapping, hold **Ctrl** to invert |
+| Fly | Hold **right mouse**, WASD, Q/E down/up, Shift faster, wheel changes speed |
+| Orbit, pan, zoom | **Alt + left drag**, middle drag, wheel |
+| Select, frame | Click in the viewport or hierarchy; **F** frames the selection, Home frames the scene, double-click a hierarchy row |
+| Create, duplicate, delete, rename | **Shift+A** (cube) or drag a mesh from Assets onto the ground; **Ctrl+D**; **Delete**; **F2** |
+| Reparent | Drag a hierarchy row onto another (or onto empty space to unparent); the object keeps its world placement |
+| Assign a material | Drag a material onto a viewport object, hierarchy row, or the Inspector's material field; *Make unique* copies a shared material for one entity |
+| Undo / redo, history | **Ctrl+Z**, **Ctrl+Shift+Z** / Ctrl+Y; click a History entry to jump |
+| New, open, save, save as | **Ctrl+N**, **Ctrl+O**, **Ctrl+S**, **Ctrl+Shift+S** (in-app scene browser) |
+| Play / stop | **F5** (or Ctrl+P); click the viewport to capture the mouse, Esc releases it |
+| UI size, shortcuts | Ctrl+= / Ctrl+- / Ctrl+0; **F1** lists every shortcut |
+
+New, Open, Revert, Quit, and closing the window ask before discarding unsaved changes (**•** in the title bar). Gizmo rotation is yaw-only and scaling an entity that has children stays uniform, matching the scene's transform model. Play copies the authored scene and runs the garden game inside the viewport; Stop discards runtime changes, and editing is disabled while playing. Scenes without the garden's goal/collectible roles stay editable, but Play reports an error.
+
+Current limits: single selection; no asset thumbnails for textures; no multi-window (platform viewport) support; materials are created only through *Make unique*. `--editor`, `--scene`, and `--save-scene` remain supported; with `--save-scene`, Ctrl+S writes to that path.
+
+### Editor dependencies and development
+
+Dear ImGui (docking branch, 1.92.9b) and ImGuizmo are pinned as non-flake inputs in `flake.lock` and compiled into `swan_ui_deps`; Inter and the Lucide icon font come from nixpkgs. `nix develop` exports their paths (`SWAN_IMGUI_DIR`, `SWAN_IMGUIZMO_DIR`, `SWAN_UI_FONT`, `SWAN_ICON_FONT`) and package builds pass them as CMake flags. Bump them with `nix flake update imgui imguizmo`; when nixpkgs changes the Lucide version, update the codepoints in `src/editor_icons.hpp` from that version's `lucide-static/font/info.json`.
+
+Editor commands are registered once in `EditorLayer::registerActions()` (`EditorAction`: id, label, icon, shortcut, enabled/checked predicates); the menus, keyboard dispatch, palette, and F1 sheet all read that registry. Panels never mutate scene data directly: they call `EditorDocument::showPreview()` for continuous edits or `apply()` (one command or an atomic batch) for discrete ones.
+
+```bash
+nix develop path:. --command bash scripts/editor-ui-test.sh
+```
+
+The GUI test drives the editor with real X11 input under Xvfb and Vulkan synchronization validation: inspector typing, Ctrl+S/Z/Y, a gizmo drag committing one undo step, duplicate, the command palette, Esc deselect, viewport picking, delete, material drag-and-drop, Play/Stop, the unsaved-changes guard (Cancel and Don't Save), settings/layout persistence, and an empty session. It locates widgets through `SWAN_EDITOR_PROBE`: when that variable names a file, the editor writes the screen rectangles of tagged widgets (`probe::item("inspector/name")`) and a few state values as JSON, so layout changes do not break the test.

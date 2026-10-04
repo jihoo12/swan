@@ -1,5 +1,6 @@
 #include "renderer.hpp"
 #include "key_bindings.hpp"
+#include "resources.hpp"
 #include <imgui.h>
 #include <imgui_impl_vulkan.h>
 #include "visibility.hpp"
@@ -45,16 +46,18 @@ void VulkanRenderer::initialize() {
     glfwSetKeyCallback(window,[](GLFWwindow* w,int key,int,int action,int modifiers){
         auto& e=*static_cast<VulkanRenderer*>(glfwGetWindowUserPointer(w));
         if(action!=GLFW_PRESS) return;
-        if(key==GLFW_KEY_ESCAPE) {
+        // Editors own Escape (deselect, release capture); games use it to release or quit.
+        if(key==GLFW_KEY_ESCAPE && !e.options.editor) {
             if(e.captured) { e.captured=false; glfwSetInputMode(w,GLFW_CURSOR,GLFW_CURSOR_NORMAL); }
             else glfwSetWindowShouldClose(w,GLFW_TRUE);
         }
-        if(e.guiContext && ImGui::GetIO().WantCaptureKeyboard) return;
+        if(e.guiContext && ImGui::GetIO().WantCaptureKeyboard && !e.captured) return;
         applyActionKey(e.input,key,action,modifiers);
     });
     glfwSetMouseButtonCallback(window,[](GLFWwindow* w,int button,int action,int){
         auto& e=*static_cast<VulkanRenderer*>(glfwGetWindowUserPointer(w));
-        if(button==(e.options.editor?GLFW_MOUSE_BUTTON_RIGHT:GLFW_MOUSE_BUTTON_LEFT) && action==GLFW_PRESS && (!e.guiContext || !ImGui::GetIO().WantCaptureMouse)) {
+        // Editor layers request capture explicitly through setCursorCaptured().
+        if(!e.options.editor && button==GLFW_MOUSE_BUTTON_LEFT && action==GLFW_PRESS && (!e.guiContext || !ImGui::GetIO().WantCaptureMouse)) {
             e.captured=true; glfwGetCursorPos(w,&e.lastX,&e.lastY); glfwSetInputMode(w,GLFW_CURSOR,GLFW_CURSOR_DISABLED);
         }
     });
@@ -126,12 +129,7 @@ void VulkanRenderer::initialize() {
     check(vkAllocateCommandBuffers(device,&ai,&command),"Command buffer");
     VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO}; check(vkCreateSemaphore(device,&si,nullptr,&acquired),"Acquire semaphore");
     VkFenceCreateInfo fi{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO}; fi.flags=VK_FENCE_CREATE_SIGNALED_BIT; check(vkCreateFence(device,&fi,nullptr,&fence),"Frame fence");
-    if(options.shaderDir.empty()) {
-        std::error_code ec;
-        auto executable=std::filesystem::read_symlink("/proc/self/exe",ec);
-        auto installed=executable.parent_path()/"../share/swan/shaders";
-        options.shaderDir=(!ec && std::filesystem::exists(installed))?installed:std::filesystem::path(SWAN_SHADER_DIR);
-    }
+    if(options.shaderDir.empty()) options.shaderDir=resourceDirectory("shaders",SWAN_SHADER_DIR);
     createDescriptors(); createSwapchain(); createPipeline();
     if(options.editor) initializeGui();
 
@@ -146,10 +144,17 @@ void VulkanRenderer::createSwapchain() {
     uint32_t n=0; check(vkGetPhysicalDeviceSurfaceFormatsKHR(gpu,surface,&n,nullptr),"Surface formats");
     if(!n) throw std::runtime_error("No surface formats");
     std::vector<VkSurfaceFormatKHR> formats(n); check(vkGetPhysicalDeviceSurfaceFormatsKHR(gpu,surface,&n,formats.data()),"Surface formats");
+    // Prefer a UNORM surface and encode sRGB in the scene shader: Dear ImGui colors are authored
+    // in sRGB, so a hardware-sRGB surface would encode them twice and wash out the editor theme.
     auto selected=formats[0];
-    for(auto f:formats) if(f.format==VK_FORMAT_B8G8R8A8_SRGB && f.colorSpace==VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {selected=f;break;}
-    if(selected.format==VK_FORMAT_UNDEFINED) selected.format=VK_FORMAT_B8G8R8A8_SRGB;
+    bool found=false;
+    for(auto wanted:{VK_FORMAT_B8G8R8A8_UNORM,VK_FORMAT_R8G8B8A8_UNORM,VK_FORMAT_B8G8R8A8_SRGB,VK_FORMAT_R8G8B8A8_SRGB}) {
+        for(auto f:formats) if(f.format==wanted && f.colorSpace==VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {selected=f;found=true;break;}
+        if(found) break;
+    }
+    if(selected.format==VK_FORMAT_UNDEFINED) selected.format=VK_FORMAT_B8G8R8A8_UNORM;
     format=selected.format;
+    encodeSrgb=format!=VK_FORMAT_B8G8R8A8_SRGB && format!=VK_FORMAT_R8G8B8A8_SRGB;
     int w,h; glfwGetFramebufferSize(window,&w,&h);
     extent=caps.currentExtent;
     if(extent.width==UINT32_MAX) extent={std::clamp(uint32_t(w),caps.minImageExtent.width,caps.maxImageExtent.width),std::clamp(uint32_t(h),caps.minImageExtent.height,caps.maxImageExtent.height)};
@@ -169,14 +174,23 @@ void VulkanRenderer::createSwapchain() {
         check(vkCreateImageView(device,&vi,nullptr,&views[i]),"Swapchain image view");
         VkSemaphoreCreateInfo si{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO}; check(vkCreateSemaphore(device,&si,nullptr,&presentReady[i]),"Present semaphore");
     }
-    VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO}; ii.imageType=VK_IMAGE_TYPE_2D; ii.format=depthFormat; ii.extent={extent.width,extent.height,1};
-    ii.mipLevels=1; ii.arrayLayers=1; ii.samples=VK_SAMPLE_COUNT_1_BIT; ii.tiling=VK_IMAGE_TILING_OPTIMAL; ii.usage=VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    check(vkCreateImage(device,&ii,nullptr,&depth),"Depth image");
-    VkMemoryRequirements req; vkGetImageMemoryRequirements(device,depth,&req);
-    VkMemoryAllocateInfo mi{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO}; mi.allocationSize=req.size; mi.memoryTypeIndex=memoryType(req.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    check(vkAllocateMemory(device,&mi,nullptr,&depthMemory),"Depth memory"); check(vkBindImageMemory(device,depth,depthMemory,0),"Bind depth memory");
-    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO}; vi.image=depth; vi.viewType=VK_IMAGE_VIEW_TYPE_2D; vi.format=depthFormat; vi.subresourceRange={VK_IMAGE_ASPECT_DEPTH_BIT,0,1,0,1};
-    check(vkCreateImageView(device,&vi,nullptr,&depthView),"Depth view");
+    depth=createImage(extent,depthFormat,VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,VK_IMAGE_ASPECT_DEPTH_BIT,depthMemory,depthView);
+}
+VkImage VulkanRenderer::createImage(VkExtent2D size,VkFormat imageFormat,VkImageUsageFlags usage,VkImageAspectFlags aspect,VkDeviceMemory& memory,VkImageView& view) {
+    VkImageCreateInfo ii{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO}; ii.imageType=VK_IMAGE_TYPE_2D; ii.format=imageFormat; ii.extent={size.width,size.height,1};
+    ii.mipLevels=1; ii.arrayLayers=1; ii.samples=VK_SAMPLE_COUNT_1_BIT; ii.tiling=VK_IMAGE_TILING_OPTIMAL; ii.usage=usage;
+    VkImage image=VK_NULL_HANDLE; check(vkCreateImage(device,&ii,nullptr,&image),"Create image");
+    try {
+        VkMemoryRequirements req; vkGetImageMemoryRequirements(device,image,&req);
+        VkMemoryAllocateInfo mi{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO}; mi.allocationSize=req.size; mi.memoryTypeIndex=memoryType(req.memoryTypeBits,VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        check(vkAllocateMemory(device,&mi,nullptr,&memory),"Image memory"); check(vkBindImageMemory(device,image,memory,0),"Bind image memory");
+        VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO}; vi.image=image; vi.viewType=VK_IMAGE_VIEW_TYPE_2D; vi.format=imageFormat; vi.subresourceRange={aspect,0,1,0,1};
+        check(vkCreateImageView(device,&vi,nullptr,&view),"Image view");
+    } catch(...) {
+        if(memory) vkFreeMemory(device,memory,nullptr);
+        vkDestroyImage(device,image,nullptr); memory=VK_NULL_HANDLE; throw;
+    }
+    return image;
 }
 VkShaderModule VulkanRenderer::shader(const char* name) {
     auto path=options.shaderDir/name; std::ifstream file(path,std::ios::binary|std::ios::ate);
@@ -195,7 +209,10 @@ void VulkanRenderer::createPipeline() {
         frag=shader("scene.frag.spv");
         VkPipelineShaderStageCreateInfo stages[2]{};
         stages[0]={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_VERTEX_BIT,vert,"main",nullptr};
-        stages[1]={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_FRAGMENT_BIT,frag,"main",nullptr};
+        VkBool32 encode=encodeSrgb;
+        VkSpecializationMapEntry entry{0,0,sizeof(VkBool32)};
+        VkSpecializationInfo specialization{1,&entry,sizeof(encode),&encode};
+        stages[1]={VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,nullptr,0,VK_SHADER_STAGE_FRAGMENT_BIT,frag,"main",&specialization};
         static_assert(sizeof(Vertex)==32 && offsetof(Vertex,normal)==12 && offsetof(Vertex,uv)==24);
         VkVertexInputBindingDescription binding{0,sizeof(Vertex),VK_VERTEX_INPUT_RATE_VERTEX};
         VkVertexInputAttributeDescription attributes[3]={{0,0,VK_FORMAT_R32G32B32_SFLOAT,offsetof(Vertex,position)},
@@ -239,9 +256,13 @@ void VulkanRenderer::rebuild() {
     int w=0,h=0; glfwGetFramebufferSize(window,&w,&h);
     while((w==0 || h==0) && !glfwWindowShouldClose(window)) { glfwWaitEvents(); glfwGetFramebufferSize(window,&w,&h); }
     if(glfwWindowShouldClose(window)) return;
-    check(vkDeviceWaitIdle(device),"Wait before resize"); if(guiVulkan) {ImGui_ImplVulkan_Shutdown();guiVulkan=false;}
+    check(vkDeviceWaitIdle(device),"Wait before resize");
+    auto previousFormat=format;
     destroySwapchain(); createSwapchain(); createPipeline();
-    if(guiContext) initializeGuiVulkan();
+    // The GUI pipeline depends only on the color format; keep it (and registered textures) otherwise.
+    if(guiVulkan && format!=previousFormat) {
+        destroySceneTarget(); ImGui_ImplVulkan_Shutdown(); guiVulkan=false; initializeGuiVulkan();
+    }
 }
 Input VulkanRenderer::pollInput() {
     glfwPollEvents();
@@ -257,13 +278,22 @@ Input VulkanRenderer::pollInput() {
     input.sprint=pressed(GLFW_KEY_LEFT_SHIFT);
     Input result=input;
     input.look={}; input.jump=false; input.pause=false; input.reset=false; input.toggleFlight=false; input.interact=false; input.reload=false; input.save=false; input.toggleCamera=false;
-    if(guiContext) {
+    // A captured cursor belongs to the application, even while the GUI is hovered or focused.
+    if(guiContext && !captured) {
         if(ImGui::GetIO().WantCaptureKeyboard) {result.move={};result.vertical=0;result.sprint=false;result.jump=false;result.pause=false;result.reset=false;result.toggleFlight=false;result.toggleCamera=false;result.interact=false;result.reload=false;result.save=false;}
         if(ImGui::GetIO().WantCaptureMouse) result.look={};
     }
     return result;
 }
 bool VulkanRenderer::shouldClose() const { return glfwWindowShouldClose(window); }
+void VulkanRenderer::cancelClose() { glfwSetWindowShouldClose(window,GLFW_FALSE); }
+void VulkanRenderer::setCursorCaptured(bool enabled) {
+    if(enabled==captured) return;
+    if(enabled && !glfwGetWindowAttrib(window,GLFW_FOCUSED)) return;
+    captured=enabled;
+    if(enabled) glfwGetCursorPos(window,&lastX,&lastY);
+    glfwSetInputMode(window,GLFW_CURSOR,enabled?GLFW_CURSOR_DISABLED:GLFW_CURSOR_NORMAL);
+}
 void VulkanRenderer::setTitle(const std::string& title) { glfwSetWindowTitle(window,title.c_str()); }
 void VulkanRenderer::resize(int width,int height) { glfwSetWindowSize(window,width,height); }
 void VulkanRenderer::finish() {
@@ -300,8 +330,40 @@ void VulkanRenderer::synchronizeMeshes(const RenderFrame& frame) {
         catch(...) { releaseMesh(mesh); throw; }
     }
 }
+void VulkanRenderer::recordScene(const RenderFrame& frame,VkImageView colorView,VkImageView depthTarget,VkExtent2D size) {
+    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}; color.imageView=colorView; color.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; color.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR; color.storeOp=VK_ATTACHMENT_STORE_OP_STORE; color.clearValue.color={{0.035f,0.065f,0.095f,1}};
+    if(encodeSrgb) color.clearValue.color={{0.206f,0.2828f,0.3406f,1}}; // Same background, pre-encoded.
+    VkRenderingAttachmentInfo depthAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}; depthAttachment.imageView=depthTarget; depthAttachment.imageLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; depthAttachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR; depthAttachment.storeOp=VK_ATTACHMENT_STORE_OP_DONT_CARE; depthAttachment.clearValue.depthStencil={1,0};
+    VkRenderingInfo render{VK_STRUCTURE_TYPE_RENDERING_INFO}; render.renderArea={{0,0},size}; render.layerCount=1; render.colorAttachmentCount=1; render.pColorAttachments=&color; render.pDepthAttachment=&depthAttachment;
+    vkCmdBeginRendering(command,&render); vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
+    VkViewport viewport{0,0,float(size.width),float(size.height),0,1}; VkRect2D scissor{{0,0},size};
+    vkCmdSetViewport(command,0,1,&viewport); vkCmdSetScissor(command,0,1,&scissor);
+    Push push{};
+    push.vp=frame.camera.viewProjection(float(size.width)/float(size.height));
+    push.eyeUvU=glm::vec4(frame.camera.position,1);
+    Frustum frustum(push.vp);
+    frameVisible=frameCulled=0;
+    for(const auto& object:frame.objects) {
+        if(options.culling && !frustum.intersects(*object.mesh,object.transform)) {++frameCulled; continue;}
+        ++frameVisible;
+        push.positionUvV=glm::vec4(object.transform.position,object.material.uvScale.y);
+        push.scaleGlow=glm::vec4(object.transform.scale,object.material.emission);
+        push.eyeUvU.w=object.material.uvScale.x;
+        push.color=glm::vec4(object.material.color,object.transform.yaw);
+        vkCmdPushConstants(command,layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(Push),&push);
+        const auto& mesh=gpuMeshes.at(object.mesh.get());
+        VkDeviceSize offset=0;
+        vkCmdBindVertexBuffers(command,0,1,&mesh.buffer,&offset);
+        vkCmdBindIndexBuffer(command,mesh.buffer,mesh.indexOffset,VK_INDEX_TYPE_UINT32);
+        const auto& texture=gpuTextures.at(object.texture.get());
+        vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_GRAPHICS,layout,0,1,&texture.descriptor,0,nullptr);
+        vkCmdDrawIndexed(command,mesh.indexCount,1,0,0,0);
+    }
+    vkCmdEndRendering(command);
+}
 void VulkanRenderer::draw(const RenderFrame& frame) {
     if(guiContext) ImGui::Render();
+    requestedTarget={frame.targetSize.x,frame.targetSize.y};
     check(vkWaitForFences(device,1,&fence,true,UINT64_MAX),"Wait frame");
     int w,h; glfwGetFramebufferSize(window,&w,&h);
     if(w==0 || h==0 || uint32_t(w)!=extent.width || uint32_t(h)!=extent.height) { rebuild(); return; }
@@ -320,38 +382,29 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
     VkImageMemoryBarrier barriers[]={colorBarrier,depthBarrier};
     // Match the acquire semaphore wait stage so the layout transition waits for presentation.
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,0,0,nullptr,0,nullptr,2,barriers);
+    bool offscreen=frame.targetSize.x && frame.targetSize.y && sceneTarget.texture;
     VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}; color.imageView=views[index]; color.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; color.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR; color.storeOp=VK_ATTACHMENT_STORE_OP_STORE; color.clearValue.color={{0.035f,0.065f,0.095f,1}};
-    VkRenderingAttachmentInfo depthAttachment{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}; depthAttachment.imageView=depthView; depthAttachment.imageLayout=VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL; depthAttachment.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR; depthAttachment.storeOp=VK_ATTACHMENT_STORE_OP_DONT_CARE; depthAttachment.clearValue.depthStencil={1,0};
-    VkRenderingInfo render{VK_STRUCTURE_TYPE_RENDERING_INFO}; render.renderArea={{0,0},extent}; render.layerCount=1; render.colorAttachmentCount=1; render.pColorAttachments=&color; render.pDepthAttachment=&depthAttachment;
-    vkCmdBeginRendering(command,&render); vkCmdBindPipeline(command,VK_PIPELINE_BIND_POINT_GRAPHICS,pipeline);
-    VkViewport viewport{0,0,float(extent.width),float(extent.height),0,1}; VkRect2D scissor{{0,0},extent};
-    vkCmdSetViewport(command,0,1,&viewport); vkCmdSetScissor(command,0,1,&scissor);
-    Push push{};
-    push.vp=frame.camera.viewProjection(float(extent.width)/float(extent.height));
-    push.eyeUvU=glm::vec4(frame.camera.position,1);
-    Frustum frustum(push.vp);
-    uint64_t visible=0,hidden=0;
-    for(const auto& object:frame.objects) {
-        if(options.culling && !frustum.intersects(*object.mesh,object.transform)) {++hidden; continue;}
-        ++visible;
-        push.positionUvV=glm::vec4(object.transform.position,object.material.uvScale.y);
-        push.scaleGlow=glm::vec4(object.transform.scale,object.material.emission);
-        push.eyeUvU.w=object.material.uvScale.x;
-        push.color=glm::vec4(object.material.color,object.transform.yaw);
-        vkCmdPushConstants(command,layout,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,0,sizeof(Push),&push);
-        const auto& mesh=gpuMeshes.at(object.mesh.get());
-        VkDeviceSize offset=0;
-        vkCmdBindVertexBuffers(command,0,1,&mesh.buffer,&offset);
-        vkCmdBindIndexBuffer(command,mesh.buffer,mesh.indexOffset,VK_INDEX_TYPE_UINT32);
-        const auto& texture=gpuTextures.at(object.texture.get());
-        vkCmdBindDescriptorSets(command,VK_PIPELINE_BIND_POINT_GRAPHICS,layout,0,1,&texture.descriptor,0,nullptr);
-        vkCmdDrawIndexed(command,mesh.indexCount,1,0,0,0);
+    VkRenderingInfo render{VK_STRUCTURE_TYPE_RENDERING_INFO}; render.renderArea={{0,0},extent}; render.layerCount=1; render.colorAttachmentCount=1; render.pColorAttachments=&color;
+    if(offscreen) {
+        // The previous frame's GUI sampling finished at the frame fence; discard and redraw the image.
+        auto targetColor=barrier(sceneTarget.color,VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,0,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+        auto targetDepth=barrier(sceneTarget.depth,VK_IMAGE_ASPECT_DEPTH_BIT,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,0,VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT|VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
+        if(depthFormat==VK_FORMAT_D24_UNORM_S8_UINT) targetDepth.subresourceRange.aspectMask|=VK_IMAGE_ASPECT_STENCIL_BIT;
+        VkImageMemoryBarrier targets[]={targetColor,targetDepth};
+        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT|VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,0,0,nullptr,0,nullptr,2,targets);
+        recordScene(frame,sceneTarget.colorView,sceneTarget.depthView,sceneTarget.extent);
+        auto sampled=barrier(sceneTarget.color,VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT);
+        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,nullptr,0,nullptr,1,&sampled);
+        color.clearValue.color={{0.06f,0.06f,0.07f,1}};
+    } else {
+        recordScene(frame,views[index],depthView,extent);
+        if(guiVulkan) {
+            auto guiBarrier=barrier(images[index],VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+            vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,nullptr,0,nullptr,1,&guiBarrier);
+            color.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;
+        }
     }
-    vkCmdEndRendering(command);
     if(guiVulkan) {
-        auto guiBarrier=barrier(images[index],VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,nullptr,0,nullptr,1,&guiBarrier);
-        color.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;render.pDepthAttachment=nullptr;
         vkCmdBeginRendering(command,&render);
         ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),command);
         vkCmdEndRendering(command);
@@ -362,14 +415,14 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
     VkPipelineStageFlags waitStage=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO}; submit.waitSemaphoreCount=1; submit.pWaitSemaphores=&acquired; submit.pWaitDstStageMask=&waitStage; submit.commandBufferCount=1; submit.pCommandBuffers=&command; submit.signalSemaphoreCount=1; submit.pSignalSemaphores=&presentReady[index];
     check(vkResetFences(device,1,&fence),"Reset frame fence"); check(vkQueueSubmit(queue,1,&submit,fence),"Submit frame");
-    ++renderedFrames; submittedObjects+=visible; culledObjects+=hidden;
+    ++renderedFrames; submittedObjects+=frameVisible; culledObjects+=frameCulled;
     VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR}; present.waitSemaphoreCount=1; present.pWaitSemaphores=&presentReady[index]; present.swapchainCount=1; present.pSwapchains=&swapchain; present.pImageIndices=&index;
     result=vkQueuePresentKHR(queue,&present);
     if(result==VK_ERROR_OUT_OF_DATE_KHR || result==VK_SUBOPTIMAL_KHR || suboptimal) rebuild(); else check(result,"Present");
 }
 void VulkanRenderer::cleanup() {
     if(device) {
-        vkDeviceWaitIdle(device); shutdownGui(); destroySwapchain();
+        vkDeviceWaitIdle(device); destroySceneTarget(); shutdownGui(); destroySwapchain();
         for(auto& [key,mesh]:gpuMeshes) { (void)key; releaseMesh(mesh); }
         gpuMeshes.clear();
         for(auto& [key,texture]:gpuTextures) { (void)key; releaseTexture(texture); }

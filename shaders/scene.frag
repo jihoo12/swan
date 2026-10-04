@@ -9,6 +9,9 @@ layout(location=3) in float glow;
 layout(location=4) in vec2 uv;
 layout(set=0,binding=0) uniform sampler2D baseColorTexture;
 layout(location=0) out vec4 outColor;
+// True for UNORM surfaces/targets: write sRGB-encoded values exactly as a hardware sRGB surface would.
+layout(constant_id=0) const bool encodeSrgb=false;
+vec3 srgb(vec3 c) { return mix(c*12.92,1.055*pow(c,vec3(1.0/2.4))-0.055,step(vec3(0.0031308),c)); }
 void main() {
     vec3 surface=albedo*texture(baseColorTexture,uv).rgb;
     vec3 n=normalize(normal);
@@ -21,5 +24,6 @@ void main() {
     float fog=1-exp(-distanceToEye*distanceToEye*0.00065);
     vec3 fogColor=vec3(0.035,0.065,0.095);
     light=mix(light,fogColor,fog);
-    outColor=vec4(light/(1+light),1);
+    vec3 mapped=light/(1+light);
+    outColor=vec4(encodeSrgb?srgb(mapped):mapped,1);
 }

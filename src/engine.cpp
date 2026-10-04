@@ -10,16 +10,22 @@ void Engine::run(GameLayer& game) {
     auto previous=std::chrono::steady_clock::now(),titleTime=previous;
     int frames=0,titleFrames=0;
     std::string lastStatus;
+    float fps=0;
     std::cout << "Scene: " << game.renderFrame(1).objects.size() << " render objects\n";
-    while(!renderer.shouldClose() && (!options.frames || frames<options.frames)) {
+    if(renderer.hasGui()) game.initializeGui();
+    while(game.running() && (!options.frames || frames<options.frames)) {
         Input input=renderer.pollInput();
-        if(renderer.shouldClose()) break;
+        if(renderer.shouldClose()) {
+            if(game.allowClose()) break;
+            renderer.cancelClose();
+        }
         auto now=std::chrono::steady_clock::now();
         double elapsed=std::chrono::duration<double>(now-previous).count(); previous=now;
         if(options.reloadTest && (frames==10 || frames==30)) input.reload=true;
         renderer.beginGui();
         game.handleInput(input);
-        game.drawGui();
+        game.drawGui(renderer.guiFrame(float(elapsed),fps));
+        if(auto capture=game.cursorCapture()) renderer.setCursorCaptured(*capture);
         clock.advance(elapsed,[&](float dt){game.fixedUpdate(dt,input);});
         renderer.draw(game.renderFrame(float(clock.remainder()/FixedStep::interval)));
         ++frames; ++titleFrames;
@@ -29,8 +35,8 @@ void Engine::run(GameLayer& game) {
         if(status!=lastStatus) { std::cout << status << '\n'; lastStatus=status; }
         float titleElapsed=std::chrono::duration<float>(now-titleTime).count();
         if(titleElapsed>=0.25f || frames==1) {
-            auto fps=titleElapsed>0?int(titleFrames/titleElapsed):0;
-            renderer.setTitle("SWAN | "+std::to_string(fps)+" FPS | "+status);
+            fps=titleElapsed>0?float(titleFrames)/titleElapsed:0;
+            renderer.setTitle("SWAN | "+std::to_string(int(fps))+" FPS | "+status);
             titleFrames=0; titleTime=now;
         }
     }

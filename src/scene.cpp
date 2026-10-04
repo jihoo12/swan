@@ -11,6 +11,13 @@ Transform composeTransform(const Transform& parent,const Transform& child) {
     float c=std::cos(parent.yaw),s=std::sin(parent.yaw);
     return {parent.position+glm::vec3(c*p.x+s*p.z,p.y,-s*p.x+c*p.z),child.scale*parent.scale.x,child.yaw+parent.yaw};
 }
+Transform relativeTransform(const Transform& parent,const Transform& world) {
+    if(parent.scale.x!=parent.scale.y || parent.scale.x!=parent.scale.z || parent.scale.x<=0)
+        throw std::invalid_argument("Hierarchy parents require positive uniform scale");
+    auto d=world.position-parent.position;
+    float c=std::cos(parent.yaw),s=std::sin(parent.yaw);
+    return {glm::vec3(c*d.x-s*d.z,d.y,s*d.x+c*d.z)/parent.scale.x,world.scale/parent.scale.x,world.yaw-parent.yaw};
+}
 EntityId Scene::create(Entity entity) {
     const auto& t=entity.transform;
     for(int i=0;i<3;++i) {

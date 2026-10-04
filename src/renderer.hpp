@@ -2,6 +2,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include "render_frame.hpp"
+#include "game_layer.hpp"
 #include "input.hpp"
 #include "options.hpp"
 #include <filesystem>
@@ -16,7 +17,11 @@ public:
     VulkanRenderer& operator=(const VulkanRenderer&) = delete;
     Input pollInput();
     void beginGui();
+    bool hasGui() const { return guiContext; }
+    GuiFrame guiFrame(float deltaTime,float fps) const;
     bool shouldClose() const;
+    void cancelClose();
+    void setCursorCaptured(bool enabled);
     void draw(const RenderFrame& frame);
     void setTitle(const std::string& title);
     void resize(int width, int height);
@@ -26,8 +31,23 @@ private:
     void initializeGui();
     void initializeGuiVulkan();
     void shutdownGui();
-    VkDescriptorPool guiPool=VK_NULL_HANDLE;
     bool guiContext=false,guiGlfw=false,guiVulkan=false;
+    // Offscreen scene image sampled by the GUI viewport; resized between frames, never mid-frame.
+    struct SceneTarget {
+        VkExtent2D extent{};
+        VkImage color=VK_NULL_HANDLE,depth=VK_NULL_HANDLE;
+        VkDeviceMemory colorMemory=VK_NULL_HANDLE,depthMemory=VK_NULL_HANDLE;
+        VkImageView colorView=VK_NULL_HANDLE,depthView=VK_NULL_HANDLE;
+        VkDescriptorSet texture=VK_NULL_HANDLE;
+    };
+    SceneTarget sceneTarget;
+    VkExtent2D requestedTarget{};
+    void createSceneTarget(VkExtent2D extent);
+    void destroySceneTarget();
+    VkImage createImage(VkExtent2D size,VkFormat imageFormat,VkImageUsageFlags usage,VkImageAspectFlags aspect,VkDeviceMemory& memory,VkImageView& view);
+    void recordScene(const RenderFrame& frame,VkImageView colorView,VkImageView depthTarget,VkExtent2D size);
+    uint64_t frameVisible=0,frameCulled=0;
+    bool encodeSrgb=false;
     void cleanup();
     void createSwapchain();
     void destroySwapchain();
