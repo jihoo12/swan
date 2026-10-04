@@ -18,6 +18,7 @@ void Game::replaceDefinition(Garden initial) {
     previousPose=std::move(pose); previousTime=0;
     definition=std::move(initial); garden=std::move(runtime);
     time=0; collectedCount=0; paused=false; flight=false; view=Camera{};
+    playerYaw=previousPlayerYaw=view.yaw;
     spawn(definition.spawn);
 }
 void Game::reloadScene() {
@@ -70,16 +71,18 @@ void Game::handleInput(const Input& input) {
             catch(const std::exception& e) { fileMessage="Save failed (see console)"; std::cerr << "Save: " << e.what() << '\n'; }
         }
     }
-    if(input.pause) { paused=!paused; jumpPending=false; previousPose.capture(garden.scene); previousTime=time; previousEye=view.position; }
+    if(input.pause) { paused=!paused; jumpPending=false; previousPose.capture(garden.scene); previousTime=time; previousEye=view.position; previousPlayerYaw=playerYaw; }
     if(input.reset) { flight=false; view=Camera{}; spawn(definition.spawn); }
     if(input.toggleFlight) {
         if(flight) { flight=false; view=Camera{}; spawn(definition.spawn); }
         else { flight=true; previousEye=view.position; verticalVelocity=0; jumpPending=false; }
     }
+    if(input.toggleCamera) thirdPerson=!thirdPerson;
     if(input.jump && !paused && !flight) jumpPending=true;
     if(input.interact && !paused && !flight) collect();
 }
 void Game::fixedUpdate(float dt,const Input& input) {
+    previousPlayerYaw=playerYaw;
     previousPose.capture(garden.scene); previousTime=time;
     previousEye=view.position;
     if(paused) return;
@@ -95,6 +98,7 @@ void Game::fixedUpdate(float dt,const Input& input) {
     glm::vec3 movement=front*input.move.y+right*input.move.x;
     if(flight) movement.y=input.vertical;
     if(glm::length(movement)>1) movement=glm::normalize(movement);
+    if(!flight && glm::length(movement)>0.0001f) playerYaw=std::atan2(-movement.z,movement.x);
     float speed=input.sprint?9.0f:4.5f;
     if(flight) {
         view.position+=movement*dt*speed;
@@ -109,19 +113,31 @@ void Game::fixedUpdate(float dt,const Input& input) {
     if(feet.y<-10) spawn(definition.spawn);
     view.position=feet+glm::vec3(0,eyeHeight,0);
 }
+Camera Game::presentationCamera(float alpha) const {
+    auto eye=glm::mix(previousEye,view.position,alpha);
+    Camera camera=view;camera.position=eye;
+    return thirdPerson && !flight?cameraRig.camera(garden.scene,camera,eye):camera;
+}
 RenderFrame Game::renderFrame(float interpolation) const {
     float alpha=std::isfinite(interpolation)?std::clamp(interpolation,0.0f,1.0f):1.0f;
-    RenderFrame frame; frame.camera=view; frame.time=glm::mix(previousTime,time,alpha);
-    frame.camera.position=glm::mix(previousEye,view.position,alpha);
+    RenderFrame frame; frame.camera=presentationCamera(alpha); frame.time=glm::mix(previousTime,time,alpha);
+
     frame.objects.reserve(garden.scene.size());
     for(auto id:garden.scene.entities()) {
         const auto* entity=garden.scene.get(id);
         frame.objects.push_back({previousPose.worldTransform(garden.scene,id,alpha),garden.scene.assets().get(entity->materialId),garden.scene.meshes().get(entity->meshId).data,garden.scene.textures().get(garden.scene.assets().get(entity->materialId).textureId).data});
     }
+    if(thirdPerson && !flight) {
+        auto eye=glm::mix(previousEye,view.position,alpha);
+        float yaw=previousPlayerYaw+std::remainder(playerYaw-previousPlayerYaw,6.2831853f)*alpha;
+        // Temporary avatar proxy; remains presentation data, not an authored entity.
+        frame.objects.push_back({{eye+glm::vec3(0,-eyeHeight+0.9f,0),{0.6f,1.8f,0.6f},yaw},{{0.2f,0.65f,0.9f},0}});
+    }
     return frame;
 }
 std::string Game::status() const {
     std::string text=flight?"FLY | F walk":"WALK | F fly";
+    if(!flight) text+=thirdPerson?" | THIRD PERSON (V)":" | FIRST PERSON (V)";
     text+=" | shards "+std::to_string(collectedCount)+"/"+std::to_string(garden.shards.size());
     if(collectedCount==int(garden.shards.size())) text+=" | Garden restored!";
     else if(!flight) {

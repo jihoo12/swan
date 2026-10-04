@@ -7,6 +7,6 @@ struct Input {
     float vertical=0;
     bool sprint=false;
     bool jump=false,pause=false,reset=false,toggleFlight=false,interact=false;
-    bool reload=false,save=false;
+    bool reload=false,save=false,toggleCamera=false;
 };
 }

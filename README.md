@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.10 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.11 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -61,6 +61,7 @@ Version 2 adds named OBJ mesh assets and version 3 adds PNG texture assets, mate
 | Space | Jump in walking mode; ascend in flight mode |
 | Left Ctrl | Descend in flight mode |
 | E | Collect a nearby shard in walking mode |
+| V | Switch first-person/third-person camera |
 | F | Switch walking/flight; returning to walking respawns at the entrance |
 | P | Pause/resume movement and world animation; mouse look remains active |
 | F5 | Reload the input scene; without a file, restart the original world |
@@ -192,3 +193,9 @@ Transform history contains generation-checked handles and parent links, without 
 Version 0.10 moves mesh vertex/index storage to device-local memory. A temporary host-visible staging buffer uploads both ranges in one copy. A transfer-write to vertex/index-read barrier makes the data available for drawing, following the [Khronos synchronization guide](https://docs.vulkan.org/guide/latest/synchronization_examples.html). Upload remains synchronous on the graphics queue; staging resources are released after completion and resident buffers after the frame fence. On unified-memory devices, device-local memory may also be host-visible.
 
 Use `--verify-mesh-uploads` for diagnostics: every uploaded mesh is copied back to a separate host-visible buffer and both vertex and index bytes are compared with the CPU asset. This adds temporary memory and transfer work; it is disabled by default. Shutdown reports uploaded/resident mesh byte counts and verified uploads. The smoke test verifies imported-mesh sharing and two reloads using this path. No scene-format change is required.
+
+Version 0.11 adds third-person play. Run `./build/swan --third-person` and press **V** to switch between first and third person. WASD moves relative to the camera aim, mouse look orbits the player, and jump/collection still use the player position. A temporary blue box represents the player; no character model or skeletal animation is claimed. Flight keeps its free camera.
+
+The reusable `ThirdPersonRig` computes a follow camera from an aim and target, pulling the boom inward against static mesh bounding-box proxies. The expanded-box sweep is conservative, includes rotated and parented colliders, and collapses the boom if its target is already inside a collider. It has no spring smoothing, shoulder offset, or exact mesh collision yet. Rendering follows the interpolated player target.
+
+See [the feature roadmap](docs/ROADMAP.md) for the planned sequence: third-person play, static glTF import, a minimal GUI editor, then clip/skeletal animation and FX. The editor can arrive before those later systems; its authored-scene commands and runtime play copy form the integration boundary.

@@ -50,6 +50,7 @@ void VulkanRenderer::initialize() {
         if(key==GLFW_KEY_P) e.input.pause=true;
         if(key==GLFW_KEY_R) e.input.reset=true;
         if(key==GLFW_KEY_F) e.input.toggleFlight=true;
+        if(key==GLFW_KEY_V) e.input.toggleCamera=true;
         if(key==GLFW_KEY_E) e.input.interact=true;
         if(key==GLFW_KEY_F5) e.input.reload=true;
         if(key==GLFW_KEY_F6) e.input.save=true;
@@ -74,7 +75,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,10,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,11,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -255,7 +256,7 @@ Input VulkanRenderer::pollInput() {
     input.vertical=float(pressed(GLFW_KEY_SPACE)-pressed(GLFW_KEY_LEFT_CONTROL));
     input.sprint=pressed(GLFW_KEY_LEFT_SHIFT);
     Input result=input;
-    input.look={}; input.jump=false; input.pause=false; input.reset=false; input.toggleFlight=false; input.interact=false; input.reload=false; input.save=false;
+    input.look={}; input.jump=false; input.pause=false; input.reset=false; input.toggleFlight=false; input.interact=false; input.reload=false; input.save=false; input.toggleCamera=false;
     return result;
 }
 bool VulkanRenderer::shouldClose() const { return glfwWindowShouldClose(window); }

@@ -89,3 +89,6 @@ assert full_culled == 0 and culled > 0
 assert submitted + culled == full_submitted and submitted < full_submitted
 print(f'Culling comparison: {submitted}/{full_submitted} draw calls submitted over {frames} frames')
 PY
+
+timeout 60s "$binary" --x11 --validation --third-person --frames 90 --resize-test
+timeout 60s "$binary" --x11 --validation --third-person --scene "$work/hierarchy.json" --reload-test --resize-test --frames 90

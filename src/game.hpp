@@ -1,6 +1,7 @@
 #pragma once
 #include "garden.hpp"
 #include "render_pose.hpp"
+#include "camera_rig.hpp"
 #include "input.hpp"
 #include "game_layer.hpp"
 #include <string>
@@ -18,7 +19,9 @@ public:
     RenderFrame renderFrame(float interpolation=1) const override;
     std::string status() const override;
     const Scene& scene() const { return garden.scene; }
-    const Camera& camera() const { return view; }
+    Camera camera() const { return presentationCamera(1); }
+    void setThirdPerson(bool enabled) { thirdPerson=enabled; }
+    bool isThirdPerson() const { return thirdPerson; }
     int collected() const { return collectedCount; }
     bool flying() const { return flight; }
     bool isPaused() const { return paused; }
@@ -26,6 +29,10 @@ public:
     // Spawn/respawn also resets controller velocity and interpolation history.
     void spawn(glm::vec3 feet);
 private:
+    Camera presentationCamera(float alpha) const;
+    ThirdPersonRig cameraRig;
+    bool thirdPerson=false;
+    float playerYaw=0,previousPlayerYaw=0;
     void overviewCamera();
     void collect();
     void replaceDefinition(Garden initial);
