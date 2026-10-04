@@ -41,7 +41,7 @@ int main() {
         require(swan::parseScene(legacy.dump()).scene.size()==442,"Legacy version 1 scene no longer loads");
         legacy["meshes"]=Json::object();
         rejects([&]{swan::parseScene(legacy.dump());},"Version 1 accepted version 2 mesh table");
-        auto mutated=json; mutated["version"]=4;
+        auto mutated=json; mutated["version"]=5;
         rejects([&]{swan::parseScene(mutated.dump());},"Unsupported version accepted");
         mutated=json; mutated["entities"][0]["transform"]["scale"][0]=0;
         rejects([&]{swan::parseScene(mutated.dump());},"Invalid scale accepted");

@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.6 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.7 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -49,7 +49,7 @@ Export and validation commands run without initializing GLFW or Vulkan. Edit a l
 
 The versioned JSON format preserves stable entity IDs, transforms, material references, collision/interaction flags, and animation settings. A scene owns a named material asset library; entities share these material definitions. The hand-editable playground demonstrates shared materials and three collectibles. See [the scene format and editing guide](assets/README.md) for field details and validation rules. [See the imported-mesh example](docs/mesh-garden.png) and [the textured example](docs/textured-garden.png).
 
-Version 2 adds named OBJ mesh assets and version 3 adds PNG texture assets, material texture references, and UV tiling. Version 1 and 2 scenes remain readable. Exporters write version 3 and rebase mesh/texture paths relative to the destination scene file. External OBJ and PNG files remain separate assets, so keep them available after exporting.
+Version 2 adds named OBJ mesh assets and version 3 adds PNG texture assets, material texture references, and UV tiling. Versions 1–3 remain readable. Exporters write version 4 and rebase mesh/texture paths relative to the destination scene file. External OBJ and PNG files remain separate assets, so keep them available after exporting.
 
 ## Controls
 
@@ -135,7 +135,7 @@ nix build path:.
 nix develop path:. --command bash scripts/smoke-test.sh ./result/bin/swan
 ```
 
-CPU tests cover entity deletion/reuse and invalid creation, procedural scene invariants, capsule floor/wall/ceiling contacts and rotated walls, equivalent movement at 60/144 display frames per second, jump/landing, pause, collection/completion, mode switching, and bounded simulation catch-up. Persistence tests cover deterministic round trips, schema/asset errors, invalid-save preservation, authored exports after gameplay, and failed/successful reloads. Mesh tests cover OBJ index validation, supplied/generated normals, vertex sharing, negative indices, degenerate/untriangulated faces, path rebasing, failed reloads, and collision bounds. Texture tests cover PNG decoding, sharing, corrupt-file rejection, material tiling, path persistence, failed/successful reloads, OBJ UV conversion, and UV seams. All three bundled examples have headless command-line validation tests. The tests use explicit checks in release builds.
+CPU tests cover entity deletion/reuse and invalid creation, procedural scene invariants, capsule floor/wall/ceiling contacts and rotated walls, equivalent movement at 60/144 display frames per second, jump/landing, pause, collection/completion, mode switching, and bounded simulation catch-up. Persistence tests cover deterministic round trips, schema/asset errors, invalid-save preservation, authored exports after gameplay, and failed/successful reloads. Mesh tests cover OBJ index validation, supplied/generated normals, vertex sharing, negative indices, degenerate/untriangulated faces, path rebasing, failed reloads, and collision bounds. Texture tests cover PNG decoding, sharing, corrupt-file rejection, material tiling, path persistence, failed/successful reloads, OBJ UV conversion, and UV seams. All four bundled examples have headless command-line validation tests. The tests use explicit checks in release builds.
 
 ```sh
 nix flake check path:.
@@ -176,3 +176,7 @@ nix flake check path:.
 Apache-2.0; see [LICENSE](LICENSE).
 
 Textures receive a full CPU-generated mip chain with area filtering in linear RGB, then use trilinear Vulkan sampling. Odd-sized images retain their edge pixels; the 1x1 white fallback stays a single level. This reduces texture shimmer at distance without requiring GPU blit support. See the [Vulkan sampler specification](https://docs.vulkan.org/spec/latest/chapters/samplers.html).
+
+Version 0.7 adds parent/child scene transforms. Try `./build/swan --scene assets/scenes/hierarchy-garden.swan.json` to see shards orbit an animated crystal. Rendering, collection distance, and collision proxies use world transforms. Reparenting retains local transforms; deleting a parent detaches its direct children in world space.
+
+Hierarchy links use generation-checked handles at runtime and stable entity keys in scene version 4. Versions 1–3 still load. Parents require uniform positive scale to avoid shear in the yaw-only transform representation. Hierarchy depth is limited to 64 ancestors, cycles are rejected, and solid colliders cannot inherit animated ancestors.

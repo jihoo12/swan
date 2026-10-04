@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(swan VERSION 0.6.0 LANGUAGES CXX)
+project(swan VERSION 0.7.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Vulkan REQUIRED)
@@ -63,3 +63,8 @@ target_link_libraries(texture_test PRIVATE swan_demo nlohmann_json::nlohmann_jso
 target_compile_definitions(texture_test PRIVATE SWAN_TEST_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
 add_test(NAME texture COMMAND texture_test)
 add_test(NAME textured_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/textured-garden.swan.json")
+
+add_executable(hierarchy_test tests/hierarchy_test.cpp)
+target_link_libraries(hierarchy_test PRIVATE swan_demo nlohmann_json::nlohmann_json)
+add_test(NAME hierarchy COMMAND hierarchy_test)
+add_test(NAME hierarchy_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/hierarchy-garden.swan.json")

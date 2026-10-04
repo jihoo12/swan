@@ -61,7 +61,7 @@ int main() {
         auto document=swan::loadScene(scenePath);
         require(document.scene.meshes().get("custom").source==std::filesystem::canonical(path),"Export failed to rebase relative mesh path");
         auto json=nlohmann::json::parse(std::ifstream(scenePath));
-        require(json["version"]==3 && json["meshes"]["custom"]["source"]=="../model.obj","Mesh source not persisted as relative reference");
+        require(json["version"]==4 && json["meshes"]["custom"]["source"]=="../model.obj","Mesh source not persisted as relative reference");
         auto layer=swan::gardenFromScene(std::move(document.scene),document.spawn);
         swan::Game game(std::move(layer),false,scenePath);
         auto before=game.renderFrame();

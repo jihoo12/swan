@@ -6,7 +6,7 @@
 ./build/swan --scene assets/scenes/playground.swan.json
 ```
 
-A scene file contains `format: "swan-scene"`, integer `version: 1`, `2`, or `3`, a `spawn` feet position, named `materials`, and `entities`. All vectors use three numeric components. Positions/scales use world units; `yaw` is in radians. Material colors are nonnegative linear RGB values; `emission` is a nonnegative multiplier.
+A scene file contains `format: "swan-scene"`, integer `version: 1`, `2`, `3`, or `4`, a `spawn` feet position, named `materials`, and `entities`. All vectors use three numeric components. Positions/scales use world units; `yaw` is in radians. Material colors are nonnegative linear RGB values; `emission` is a nonnegative multiplier.
 
 Each entity requires a unique stable `id`, a `name`, a `mesh` asset ID (`builtin:cube` is always available), a named `material`, and a `transform` containing `position`, positive `scale`, and `yaw`. Runtime generation handles are rebuilt when loading; stable file IDs remain unchanged.
 
@@ -36,7 +36,7 @@ Entities reference `"mesh": "crystal-mesh"`. Source paths are resolved relative 
 
 The OBJ subset accepts triangular faces, positive/negative position and normal indices, and optional normals. Supplied normals are normalized; missing normals are generated per face for flat shading. Triangulate meshes in your authoring tool before export. Non-triangle faces, line/point primitives, invalid position/normal indices, degenerate triangles, and invalid normals are rejected. Files are limited to 32 MiB and 1,000,000 triangle corners. UVs are retained and the V coordinate is flipped to match PNG row order. Missing UVs default to (0, 0). Vertex colors, smoothing groups, and MTL files are not used; appearance comes from scene materials. Bounds are computed from referenced vertices; solid meshes collide using a rotated box proxy, not exact triangle collision.
 
-Export writes version 3 and rebases mesh/texture sources relative to the output directory. It preserves references rather than copying OBJ/PNG files. Keep referenced files available when moving or sharing a scene. Existing version 1 scenes still load; version 1 does not allow a `meshes` table.
+Export writes version 4 and rebases mesh/texture sources relative to the output directory. It preserves references rather than copying OBJ/PNG files. Keep referenced files available when moving or sharing a scene. Existing version 1 scenes still load; version 1 does not allow a `meshes` table.
 
 GPU resources use a shared buffer containing vertices and 32-bit indices. Buffers are uploaded once per resource and old ones are freed after the frame fence. `--reload-test --frames 90` triggers F5-style reloads after 10 and 30 frames for validation; use it with `--scene` to exercise mesh replacement.
 
@@ -87,3 +87,5 @@ F6 exports the **loaded authored definition** to the explicit `--save-scene` pat
 Scene paths are explicit and relative to the working directory when not absolute. The Nix package also installs these examples under `share/swan/assets/` next to `bin/`.
 
 Mipmaps are generated automatically down to 1x1 in linear RGB, with linear alpha averaging. Vulkan uses trilinear filtering across these levels. No scene schema change or authored mip files are needed.
+
+Scene version 4 adds an optional `"parent": "entity-id"` field to each entity. Transforms and animation heights are local to that parent. Parents may appear later in the file. Missing parents, cycles, nonuniform parent scales, and animated ancestors of solid colliders are rejected. The `hierarchy-garden.swan.json` example groups the collectible shards under a rotating crystal. Export writes version 4 and keeps local transforms and stable parent references.

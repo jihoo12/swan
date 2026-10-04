@@ -46,3 +46,10 @@ if [[ -f "$installed_texture_scene" ]]; then texture_scene="$installed_texture_s
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$texture_scene" --export-scene "$work/textured-garden.swan.json"
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/textured-garden.swan.json"
 timeout 60s "$binary" --x11 --validation --scene "$work/textured-garden.swan.json" --reload-test --resize-test --frames 90
+
+hierarchy_scene=assets/scenes/hierarchy-garden.swan.json
+installed_hierarchy="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/hierarchy-garden.swan.json"
+if [[ -f "$installed_hierarchy" ]]; then hierarchy_scene="$installed_hierarchy"; fi
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$hierarchy_scene" --export-scene "$work/hierarchy.json"
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/hierarchy.json"
+timeout 60s "$binary" --x11 --validation --scene "$work/hierarchy.json" --reload-test --resize-test --frames 90

@@ -36,7 +36,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     try {
         const auto root=Json::parse(text);
         keys(root,{"format","version","spawn","materials","meshes","textures","entities"});
-        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || (root.at("version")!=1 && root.at("version")!=2 && root.at("version")!=3))
+        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || (root.at("version")!=1 && root.at("version")!=2 && root.at("version")!=3 && root.at("version")!=4))
             throw std::invalid_argument("Unsupported scene format/version");
         SceneDocument document;
         document.spawn=vector(root.at("spawn"));
@@ -46,7 +46,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
             keys(it.value(),{"color","emission","texture","uv_scale"});
             Material material{vector(it.value().at("color")),number(it.value().at("emission"))};
             if(it.value().contains("texture") || it.value().contains("uv_scale")) {
-                if(root.at("version")!=3) throw std::invalid_argument("Textured materials require scene version 3");
+                if(root.at("version")<3) throw std::invalid_argument("Textured materials require scene version 3");
                 material.textureId=it.value().value("texture",std::string("builtin:white"));
                 if(it.value().contains("uv_scale")) {
                     const auto& uv=it.value().at("uv_scale");
@@ -69,7 +69,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
             }
         }
         if(root.contains("textures")) {
-            if(root.at("version")!=3) throw std::invalid_argument("Texture assets require scene version 3");
+            if(root.at("version")<3) throw std::invalid_argument("Texture assets require scene version 3");
             const auto& textures=root.at("textures");
             if(!textures.is_object() || textures.size()>256) throw std::invalid_argument("Textures must be an object with at most 256 entries");
             auto base=baseDirectory.empty()?std::filesystem::current_path():baseDirectory;
@@ -87,7 +87,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
         for(size_t i=0;i<entities.size();++i) {
             try {
                 const auto& source=entities[i];
-                keys(source,{"id","name","mesh","material","transform","solid","collectible","goal","animation"});
+                keys(source,{"id","name","mesh","material","transform","solid","collectible","goal","animation","parent"});
                 Entity entity;
                 entity.key=source.at("id").get<std::string>();
                 if(entity.key.empty()) throw std::invalid_argument("Entity ID cannot be empty");
@@ -104,11 +104,19 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
                 document.scene.create(std::move(entity));
             } catch(const std::exception& e) { throw std::invalid_argument("Entity "+std::to_string(i)+": "+e.what()); }
         }
+        // Resolve after creating all entities, so file order does not matter.
+        for(const auto& source:entities) if(source.contains("parent")) {
+            if(root.at("version")<4) throw std::invalid_argument("Hierarchy requires scene version 4");
+            auto key=source.at("parent").get<std::string>();
+            auto parent=document.scene.find(key);
+            if(!document.scene.get(parent)) throw std::invalid_argument("Unknown parent: "+key);
+            document.scene.setParent(document.scene.find(source.at("id").get<std::string>()),parent);
+        }
         return document;
     } catch(const std::exception& e) { throw std::invalid_argument(std::string("Invalid Swan scene: ")+e.what()); }
 }
 std::string serializeScene(const SceneDocument& document,const std::filesystem::path& baseDirectory) {
-    Json root={{"format","swan-scene"},{"version",3},{"spawn",vector(document.spawn)},
+    Json root={{"format","swan-scene"},{"version",4},{"spawn",vector(document.spawn)},
                {"materials",Json::object()},{"meshes",Json::object()},{"textures",Json::object()},{"entities",Json::array()}};
     for(const auto& [id,material]:document.scene.assets().entries())
         root["materials"][id]={{"color",vector(material.color)},{"emission",material.emission},
@@ -128,6 +136,7 @@ std::string serializeScene(const SceneDocument& document,const std::filesystem::
         Json entity={{"id",e.key},{"name",e.name},{"mesh",e.meshId},{"material",e.materialId},
             {"transform",{{"position",vector(e.transform.position)},{"scale",vector(e.transform.scale)},{"yaw",e.transform.yaw}}},
             {"solid",e.solid},{"collectible",e.collectible},{"goal",e.goal}};
+        if(auto parent=document.scene.parent(id)) entity["parent"]=document.scene.get(*parent)->key;
         if(e.animation) {
             const auto& a=*e.animation;
             entity["animation"]={{"base_height",a.baseHeight},{"phase",a.phase},{"bob",a.bob},{"speed",a.speed}};

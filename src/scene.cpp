@@ -46,10 +46,62 @@ EntityId Scene::find(const std::string& key) const {
         if(slots[i].entity && slots[i].entity->key==key) return {i,slots[i].generation};
     return {};
 }
+std::optional<EntityId> Scene::parent(EntityId child) const {
+    if(!get(child)) throw std::invalid_argument("Invalid hierarchy handle");
+    return slots[child.index].parent;
+}
+Transform Scene::worldTransform(EntityId id) const {
+    if(!get(id)) throw std::invalid_argument("Invalid world transform handle");
+    Transform result=get(id)->transform;
+    auto ancestor=parent(id);
+    size_t depth=0;
+    while(ancestor) {
+        if(++depth>64 || !get(*ancestor)) throw std::invalid_argument("Invalid hierarchy depth/parent");
+        const auto& entity=*get(*ancestor);
+        const auto& t=entity.transform;
+        if(t.scale.x!=t.scale.y || t.scale.x!=t.scale.z || t.scale.x<=0)
+            throw std::invalid_argument("Hierarchy parents require positive uniform scale");
+        auto p=result.position*t.scale.x;
+        float c=std::cos(t.yaw),s=std::sin(t.yaw);
+        result.position=t.position+glm::vec3(c*p.x+s*p.z,p.y,-s*p.x+c*p.z);
+        result.scale*=t.scale.x; result.yaw+=t.yaw;
+        if(get(id)->solid && entity.animation) throw std::invalid_argument("Solid collider cannot inherit animation");
+        ancestor=parent(*ancestor);
+    }
+    for(int i=0;i<3;++i) if(!std::isfinite(result.position[i]) || !std::isfinite(result.scale[i]) || result.scale[i]<=0)
+        throw std::invalid_argument("Invalid world transform");
+    if(!std::isfinite(result.yaw)) throw std::invalid_argument("Invalid world rotation");
+    return result;
+}
+void Scene::setParent(EntityId child,std::optional<EntityId> next) {
+    if(!get(child) || (next && !get(*next))) throw std::invalid_argument("Invalid parent/child handle");
+    auto ancestor=next; size_t depth=0;
+    while(ancestor) {
+        if(*ancestor==child) throw std::invalid_argument("Hierarchy cycle");
+        if(++depth>64) throw std::invalid_argument("Hierarchy depth exceeds 64");
+        ancestor=parent(*ancestor);
+    }
+    auto previous=slots[child.index].parent;
+    slots[child.index].parent=next;
+    try { for(auto id:entities()) worldTransform(id); }
+    catch(...) {slots[child.index].parent=previous; throw;}
+}
 bool Scene::destroy(EntityId id) {
     if(!get(id)) return false;
+    // Detach direct children in world space before deleting their parent.
+    std::vector<std::pair<EntityId,Transform>> children;
+    for(auto child:entities()) if(parent(child)==id) children.emplace_back(child,worldTransform(child));
+    for(const auto& [child,transform]:children) {
+        auto* entity=get(child);
+        if(entity->animation) {
+            float factor=transform.scale.x/entity->transform.scale.x;
+            entity->animation->baseHeight=transform.position.y+(entity->animation->baseHeight-entity->transform.position.y)*factor;
+            entity->animation->bob*=factor;
+        }
+        slots[child.index].parent.reset(); entity->transform=transform;
+    }
     auto& slot=slots[id.index];
-    slot.entity.reset(); ++slot.generation; --liveCount;
+    slot.parent.reset(); slot.entity.reset(); ++slot.generation; --liveCount;
     // Never recycle a slot after its generation wraps around.
     if(slot.generation!=0) freeSlots.push_back(id.index);
     return true;

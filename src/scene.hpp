@@ -35,13 +35,17 @@ public:
     const MeshAssets& meshes() const { return meshAssets; }
     TextureAssets& textures() { return textureAssets; }
     const TextureAssets& textures() const { return textureAssets; }
+    // Local transforms are retained on reparenting; parents require uniform scale.
+    void setParent(EntityId child, std::optional<EntityId> parent);
+    std::optional<EntityId> parent(EntityId child) const;
+    Transform worldTransform(EntityId id) const;
     bool destroy(EntityId id);
     Entity* get(EntityId id);
     const Entity* get(EntityId id) const;
     std::vector<EntityId> entities() const;
     size_t size() const { return liveCount; }
 private:
-    struct Slot { uint32_t generation=0; std::optional<Entity> entity; };
+    struct Slot { uint32_t generation=0; std::optional<Entity> entity; std::optional<EntityId> parent; };
     std::vector<Slot> slots;
     std::vector<uint32_t> freeSlots;
     size_t liveCount=0;

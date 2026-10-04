@@ -44,7 +44,7 @@ void Game::collect() {
     for(auto id:garden.shards) {
         auto* entity=garden.scene.get(id);
         if(!entity) continue;
-        float d=glm::length(entity->transform.position-view.position);
+        float d=glm::length(garden.scene.worldTransform(id).position-view.position);
         if(d<distance) { nearest=id; distance=d; }
     }
     if(garden.scene.destroy(nearest)) {
@@ -112,7 +112,7 @@ RenderFrame Game::renderFrame(float interpolation) const {
     frame.objects.reserve(garden.scene.size());
     for(auto id:garden.scene.entities()) {
         const auto* entity=garden.scene.get(id);
-        frame.objects.push_back({entity->transform,garden.scene.assets().get(entity->materialId),garden.scene.meshes().get(entity->meshId).data,garden.scene.textures().get(garden.scene.assets().get(entity->materialId).textureId).data});
+        frame.objects.push_back({garden.scene.worldTransform(id),garden.scene.assets().get(entity->materialId),garden.scene.meshes().get(entity->meshId).data,garden.scene.textures().get(garden.scene.assets().get(entity->materialId).textureId).data});
     }
     return frame;
 }
@@ -123,7 +123,7 @@ std::string Game::status() const {
     else if(!flight) {
         for(auto id:garden.shards) {
             const auto* entity=garden.scene.get(id);
-            if(entity && glm::length(entity->transform.position-view.position)<2.2f) {text+=" | E collect"; break;}
+            if(entity && glm::length(garden.scene.worldTransform(id).position-view.position)<2.2f) {text+=" | E collect"; break;}
         }
     }
     if(paused) text+=" | PAUSED";

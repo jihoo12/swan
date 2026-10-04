@@ -47,7 +47,7 @@ MotionResult moveCapsule(const Scene& scene,glm::vec3 feet,glm::vec3 displacemen
                 const auto* entity=scene.get(id);
                 if(!entity->solid) continue;
                 const auto& mesh=*scene.meshes().get(entity->meshId).data;
-                Transform proxy=entity->transform;
+                Transform proxy=scene.worldTransform(id);
                 auto center=(mesh.minimum+mesh.maximum)*0.5f;
                 proxy.position+=rotate(center*proxy.scale,proxy.yaw);
                 proxy.scale*=(mesh.maximum-mesh.minimum);
