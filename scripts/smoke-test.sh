@@ -39,7 +39,23 @@ installed_scene="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scen
 if [[ -f "$installed_scene" ]]; then mesh_scene="$installed_scene"; fi
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$mesh_scene" --export-scene "$work/mesh-garden.swan.json"
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/mesh-garden.swan.json"
-timeout 60s "$binary" --x11 --validation --scene "$work/mesh-garden.swan.json" --reload-test --resize-test --frames 90
+timeout 60s "$binary" --x11 --validation --verify-mesh-uploads --scene "$work/mesh-garden.swan.json" --reload-test --resize-test --frames 90 | tee "$work/mesh-uploads.log"
+python3 - "$work/mesh-uploads.log" <<'PYTEST'
+import re
+import sys
+from pathlib import Path
+text = Path(sys.argv[1]).read_text()
+meshes = re.search(r'Mesh uploads: (\d+); resident meshes: (\d+)', text)
+storage = re.search(r'Mesh storage: device-local; uploaded bytes=(\d+); resident bytes=(\d+); verified uploads=(\d+)', text)
+if not meshes or not storage:
+    raise RuntimeError('Missing mesh upload diagnostics')
+uploads, resident = map(int, meshes.groups())
+uploaded_bytes, resident_bytes, verified = map(int, storage.groups())
+assert uploads == verified == 4 and resident == 2
+assert 0 < resident_bytes < uploaded_bytes
+assert 'Validation errors: 0' in text
+print(f'Mesh staging verified: {verified} uploads, {resident} resident buffers')
+PYTEST
 texture_scene=assets/scenes/textured-garden.swan.json
 installed_texture_scene="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/textured-garden.swan.json"
 if [[ -f "$installed_texture_scene" ]]; then texture_scene="$installed_texture_scene"; fi

@@ -74,7 +74,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,9,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,10,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -264,38 +264,14 @@ void VulkanRenderer::resize(int width,int height) { glfwSetWindowSize(window,wid
 void VulkanRenderer::finish() {
     check(vkDeviceWaitIdle(device),"Wait shutdown");
     std::cout << "Mesh uploads: " << uploadedMeshes << "; resident meshes: " << gpuMeshes.size() << '\n';
+    VkDeviceSize residentBytes=0;
+    for(const auto& [key,mesh]:gpuMeshes) { (void)key; residentBytes+=mesh.byteSize; }
+    std::cout << "Mesh storage: device-local; uploaded bytes=" << uploadedMeshBytes
+              << "; resident bytes=" << residentBytes << "; verified uploads=" << verifiedMeshUploads << '\n';
     std::cout << "Texture uploads: " << uploadedTextures << "; resident textures: " << gpuTextures.size() << '\n';
     std::cout << "Draw statistics: frames=" << renderedFrames << " submitted=" << submittedObjects << " culled=" << culledObjects << '\n';
     std::cout << "Validation errors: " << validationErrors << '\n';
     if(validationErrors) throw std::runtime_error("Vulkan validation reported errors");
-}
-VulkanRenderer::GpuMesh VulkanRenderer::uploadMesh(SharedMesh data) {
-    if(!data || data->vertices.empty() || data->indices.empty()) throw std::invalid_argument("Cannot upload an empty mesh");
-    GpuMesh mesh; mesh.owner=std::move(data);
-    mesh.indexOffset=mesh.owner->vertices.size()*sizeof(Vertex);
-    mesh.indexCount=uint32_t(mesh.owner->indices.size());
-    try {
-        VkBufferCreateInfo info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        info.size=mesh.indexOffset+mesh.owner->indices.size()*sizeof(uint32_t);
-        info.usage=VK_BUFFER_USAGE_VERTEX_BUFFER_BIT|VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-        info.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
-        check(vkCreateBuffer(device,&info,nullptr,&mesh.buffer),"Create mesh buffer");
-        VkMemoryRequirements requirements; vkGetBufferMemoryRequirements(device,mesh.buffer,&requirements);
-        VkMemoryAllocateInfo allocation{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        allocation.allocationSize=requirements.size;
-        allocation.memoryTypeIndex=memoryType(requirements.memoryTypeBits,VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
-        check(vkAllocateMemory(device,&allocation,nullptr,&mesh.memory),"Allocate mesh memory");
-        check(vkBindBufferMemory(device,mesh.buffer,mesh.memory,0),"Bind mesh memory");
-        void* mapped=nullptr;
-        check(vkMapMemory(device,mesh.memory,0,VK_WHOLE_SIZE,0,&mapped),"Map mesh memory");
-        std::memcpy(mapped,mesh.owner->vertices.data(),size_t(mesh.indexOffset));
-        std::memcpy(static_cast<char*>(mapped)+mesh.indexOffset,mesh.owner->indices.data(),mesh.owner->indices.size()*sizeof(uint32_t));
-        VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE};
-        range.memory=mesh.memory; range.offset=0; range.size=VK_WHOLE_SIZE;
-        auto result=vkFlushMappedMemoryRanges(device,1,&range);
-        vkUnmapMemory(device,mesh.memory); check(result,"Flush mesh memory");
-    } catch(...) { releaseMesh(mesh); throw; }
-    return mesh;
 }
 void VulkanRenderer::releaseMesh(GpuMesh& mesh) {
     if(mesh.buffer) vkDestroyBuffer(device,mesh.buffer,nullptr);
@@ -315,7 +291,7 @@ void VulkanRenderer::synchronizeMeshes(const RenderFrame& frame) {
     }
     for(const auto& object:frame.objects) if(!gpuMeshes.contains(object.mesh.get())) {
         auto mesh=uploadMesh(object.mesh);
-        try { gpuMeshes.emplace(object.mesh.get(),mesh); ++uploadedMeshes; }
+        try { gpuMeshes.emplace(object.mesh.get(),mesh); ++uploadedMeshes; uploadedMeshBytes+=mesh.byteSize; }
         catch(...) { releaseMesh(mesh); throw; }
     }
 }

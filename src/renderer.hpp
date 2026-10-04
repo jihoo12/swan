@@ -47,14 +47,15 @@ private:
         SharedMesh owner;
         VkBuffer buffer=VK_NULL_HANDLE;
         VkDeviceMemory memory=VK_NULL_HANDLE;
-        VkDeviceSize indexOffset=0;
+        VkDeviceSize indexOffset=0,byteSize=0;
         uint32_t indexCount=0;
     };
     GpuMesh uploadMesh(SharedMesh mesh);
     void releaseMesh(GpuMesh& mesh);
     void synchronizeMeshes(const RenderFrame& frame);
     std::map<const MeshData*,GpuMesh> gpuMeshes;
-    size_t uploadedMeshes=0;
+    size_t uploadedMeshes=0,verifiedMeshUploads=0;
+    VkDeviceSize uploadedMeshBytes=0;
     uint64_t renderedFrames=0,submittedObjects=0,culledObjects=0;
     uint32_t memoryType(uint32_t mask,VkMemoryPropertyFlags flags);
     VkShaderModule shader(const char* name);

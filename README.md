@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.9 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.10 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -100,10 +100,10 @@ To implement another game, derive from `GameLayer` and implement `handleInput`, 
 - Per-object yaw, scale, and position; indexed built-in cube and imported triangle meshes.
 - Correct inverse-scale normal transformation for nonuniform object scaling.
 - Shared immutable CPU meshes and a GPU buffer cache keyed by resource identity; aliases share one upload. Unused buffers are released after the frame fence before recording the next frame.
-- Mesh upload currently uses host-visible memory with explicit flushing. Texture pixels use a staging buffer and device-local sRGB images, with layout transitions before sampling.
+- Mesh upload copies an explicitly flushed host-visible staging buffer into device-local vertex/index storage. Texture pixels use a staging buffer and device-local sRGB images, with layout transitions before sampling.
 - Shared linear/repeat sampler, one combined-image-sampler descriptor per cached texture, and white fallback for untextured materials. Texture images/views/descriptors are retired after the frame fence.
 - Per-material UV tiling; built-in cube face UVs and imported OBJ UVs, including seams. Textures modulate linear material color and emission.
-- Texture upload waits for its queue to finish; asynchronous streaming, anisotropic filtering, and device-local mesh staging are future optimizations.
+- Texture upload waits for its queue to finish; asynchronous streaming and anisotropic filtering are future optimizations.
 - Directional sunlight, cyan local lighting, emissive materials, distance fog, and tone mapping.
 - Swapchain/depth recreation on resize and waiting while minimized.
 - One frame in flight, one frame fence, one acquire semaphore, and a presentation semaphore per swapchain image; shared depth use remains serialized.
@@ -188,3 +188,7 @@ Run with `--no-culling` to compare the same scene with every object submitted. S
 Version 0.9 interpolates object poses between the previous and current fixed simulation ticks. Position and scale blend linearly; yaw takes the shortest angular path across wraparound. Local poses blend before hierarchy composition so a child follows its parent's rotation without cutting across its orbit. Rendering and frustum culling use the same interpolated world pose; collisions and interactions use the current fixed-step state.
 
 Transform history contains generation-checked handles and parent links, without copying meshes or textures. New/reused entities and changed parent links snap to their current pose, deleted entities disappear immediately, reload resets history, and pause freezes the current pose. Interpolation factors clamp to 0–1; nonfinite values select the current state. Mouse-look remains immediate.
+
+Version 0.10 moves mesh vertex/index storage to device-local memory. A temporary host-visible staging buffer uploads both ranges in one copy. A transfer-write to vertex/index-read barrier makes the data available for drawing, following the [Khronos synchronization guide](https://docs.vulkan.org/guide/latest/synchronization_examples.html). Upload remains synchronous on the graphics queue; staging resources are released after completion and resident buffers after the frame fence. On unified-memory devices, device-local memory may also be host-visible.
+
+Use `--verify-mesh-uploads` for diagnostics: every uploaded mesh is copied back to a separate host-visible buffer and both vertex and index bytes are compared with the CPU asset. This adds temporary memory and transfer work; it is disabled by default. Shutdown reports uploaded/resident mesh byte counts and verified uploads. The smoke test verifies imported-mesh sharing and two reloads using this path. No scene-format change is required.

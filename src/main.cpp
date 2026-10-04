@@ -9,10 +9,11 @@ int main(int argc,char** argv) {
         for(int i=1;i<argc;++i) {
             std::string arg=argv[i];
             if(arg=="--help") {
-                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--validation] [--x11] [--overview] [--no-culling] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
+                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--validation] [--x11] [--overview] [--no-culling] [--verify-mesh-uploads] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
                           << "WASD move | Shift sprint | click to look | Space jump | E collect\nF toggle flight (Space/Ctrl ascend/descend) | P pause | R respawn | F5 reload | F6 save definition | Esc release / quit\n";
                 return 0;
             } else if(arg=="--validation") options.validation=true;
+            else if(arg=="--verify-mesh-uploads") options.verifyMeshUploads=true;
             else if(arg=="--no-culling") options.culling=false;
             else if(arg=="--overview") options.overview=true;
             else if(arg=="--x11") options.x11=true;

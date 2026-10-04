@@ -89,3 +89,5 @@ Scene paths are explicit and relative to the working directory when not absolute
 Mipmaps are generated automatically down to 1x1 in linear RGB, with linear alpha averaging. Vulkan uses trilinear filtering across these levels. No scene schema change or authored mip files are needed.
 
 Scene version 4 adds an optional `"parent": "entity-id"` field to each entity. Transforms and animation heights are local to that parent. Parents may appear later in the file. Missing parents, cycles, nonuniform parent scales, and animated ancestors of solid colliders are rejected. The `hierarchy-garden.swan.json` example groups the collectible shards under a rotating crystal. Export writes version 4 and keeps local transforms and stable parent references.
+
+Mesh vertex/index buffers use device-local storage with temporary staging uploads. To verify the complete uploaded bytes during development, run with `--verify-mesh-uploads`. Sharing and reload behavior remain unchanged.
