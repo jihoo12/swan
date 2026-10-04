@@ -9,8 +9,11 @@ int main(int argc,char** argv) {
         swan::Options options;
         for(int i=1;i<argc;++i) {
             std::string arg=argv[i];
-            if(arg=="--help") {
-                std::cout << "Swan — Vulkan 3D garden\nUsage: swan [--editor] [--validation] [--x11] [--overview] [--third-person] [--no-culling] [--verify-mesh-uploads] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
+            if(arg=="editor" && i==1) {
+                options.editor=true;
+                if(i+1<argc && argv[i+1][0]!='-') options.scenePath=argv[++i];
+            } else if(arg=="--help") {
+                std::cout << "Swan — Vulkan 3D garden\nUsage: swan editor [SCENE] | swan [--editor] [--validation] [--x11] [--overview] [--third-person] [--no-culling] [--verify-mesh-uploads] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
                           << "WASD move | Shift sprint | click to look | Space jump | E collect\nV toggle first/third person | F toggle flight (Space/Ctrl ascend/descend) | P pause | R respawn | F5 reload | F6 save definition | Esc release / quit\n";
                 return 0;
             } else if(arg=="--validation") options.validation=true;
@@ -36,7 +39,6 @@ int main(int argc,char** argv) {
         if(options.editor && !options.validateScene && options.exportPath.empty()) {
             swan::SceneDocument document;
             if(!options.scenePath.empty()) document=swan::loadScene(options.scenePath);
-            else {auto garden=swan::makeGarden();document={std::move(garden.scene),garden.spawn};}
             swan::EditorLayer editor(std::move(document),options);
             swan::Engine engine(options);engine.run(editor);return 0;
         }

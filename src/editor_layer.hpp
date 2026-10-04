@@ -22,6 +22,10 @@ private:
     std::array<char,1024> savePath{};
     std::filesystem::path sourcePath;
     bool thirdPerson=false;
+    std::array<char,256> name{},search{};
+    Entity properties;
+    Material materialDraft;
+    std::string materialKey;
     std::string draftKey,message;
     Transform draft;
 };

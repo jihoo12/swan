@@ -222,12 +222,14 @@ A headless frontend exercises the same command API:
 Version 0.14 adds the first Dear ImGui editor overlay:
 
 ```bash
-./build/swan --editor --scene assets/scenes/gltf-garden.swan.json --save-scene /tmp/edited.swan.json
+./build/swan editor
+# Open an existing scene:
+./build/swan editor assets/scenes/gltf-garden.swan.json
 ```
 
 The left panel lists entities with hierarchy indentation, selection, Add cube/Delete, Undo/Redo, save path, source reload, and Play/Stop. The inspector edits local position, scale, and yaw; **Apply transform** commits one validated undoable command. Materials are displayed read-only in this first UI. Save always writes authored data, even during play. Play currently runs the garden game and requires its goal/collectible roles; scenes without those roles remain editable, and Play reports an error. Stop restores the authored preview.
 
-Right-click the scene background to capture mouse look, WASD moves the editor camera, Space/Ctrl changes altitude, and Escape releases the mouse. UI mouse/keyboard capture suppresses camera/game input while interacting with panels. The UI renders through Dear ImGui's GLFW/Vulkan backends as a separate overlay pass; swapchain resize recreates its Vulkan backend after GPU completion. No docking, viewport picking, gizmo, file browser, material editing, or selection outline is included yet.
+Right-click the scene background to capture mouse look, WASD moves the editor camera, Space/Ctrl changes altitude, and Escape releases the mouse. UI mouse/keyboard capture suppresses camera/game input while interacting with panels. The UI renders through Dear ImGui's GLFW/Vulkan backends as a separate overlay pass; swapchain resize recreates its Vulkan backend after GPU completion. The inspector supports names, mesh/material assignment, gameplay flags, parent changes, and shared material color/emission/texture/UV editing. Duplicate creates an independent entity with a new stable key and retains its parent. Focus selection moves the camera toward the selected object; the hierarchy can be filtered by name or key. Apply buttons commit one undoable transaction; invalid changes preserve the scene. Parent changes retain local transforms. Click a visible mesh to select its nearest surface; clicking empty space clears selection. A marker identifies the selected object. New cubes appear five units ahead of the camera and are selected immediately. `swan editor` opens an empty scene, and `swan editor PATH` opens an existing scene. The Scene file field supports Open scene and Save authored scene without command-line save options; the default destination is the opened file or `scene.swan.json` for a new scene. The legacy `--editor`, `--scene`, and `--save-scene` flags remain supported. No docking, gizmo, file browser, or selection outline is included yet.
 
 ![Swan's initial GUI editor](docs/editor.png)
 

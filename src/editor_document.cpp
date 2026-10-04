@@ -35,7 +35,11 @@ void EditorDocument::apply(const SceneEdit& edit) {
     std::visit([&](const auto& command) {
         using T=std::decay_t<decltype(command)>;
         if constexpr(std::is_same_v<T,SetTransform>) scene.get(requireEntity(scene,command.key))->transform=command.value;
-        else if constexpr(std::is_same_v<T,SetMaterial>) {
+        else if constexpr(std::is_same_v<T,SetEntityProperties>) {
+            auto* entity=scene.get(requireEntity(scene,command.key));
+            entity->name=command.name;entity->meshId=command.meshId;entity->materialId=command.materialId;
+            entity->solid=command.solid;entity->collectible=command.collectible;entity->goal=command.goal;
+        } else if constexpr(std::is_same_v<T,SetMaterial>) {
             if(!scene.assets().contains(command.id)) throw std::invalid_argument("Unknown editor material: "+command.id);
             scene.assets().set(command.id,command.value);
         } else if constexpr(std::is_same_v<T,SetParent>) {

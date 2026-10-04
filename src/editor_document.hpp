@@ -3,11 +3,12 @@
 #include <variant>
 namespace swan {
 struct SetTransform { std::string key; Transform value; };
+struct SetEntityProperties { std::string key,name,meshId,materialId; bool solid=false,collectible=false,goal=false; };
 struct SetMaterial { std::string id; Material value; };
 struct SetParent { std::string key; std::optional<std::string> parent; };
 struct CreateEntity { Entity value; std::optional<std::string> parent; };
 struct DeleteEntity { std::string key; };
-using SceneEdit=std::variant<SetTransform,SetMaterial,SetParent,CreateEntity,DeleteEntity>;
+using SceneEdit=std::variant<SetTransform,SetEntityProperties,SetMaterial,SetParent,CreateEntity,DeleteEntity>;
 // Frontends retain keys, not entity handles, across edits and history navigation.
 class EditorDocument {
 public:

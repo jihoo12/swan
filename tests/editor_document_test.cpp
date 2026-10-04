@@ -34,6 +34,19 @@ int main() {
         editor.apply(swan::SetMaterial{"default",material});
         require(editor.document().scene.assets().get("default").color==material.color,"Material edit failed");
         require(editor.undo() && editor.undo() && !editor.undo(),"History bound not enforced");
+        editor.select(key);
+        auto before=*editor.document().scene.get(editor.document().scene.find(key));
+        auto properties=swan::SetEntityProperties{key,"Renamed object",before.meshId,before.materialId,before.solid,before.collectible,before.goal};
+        editor.apply(properties);
+        require(editor.document().scene.get(editor.document().scene.find(key))->name=="Renamed object","Rename failed");
+        auto invalid=properties;invalid.meshId="missing";
+        rejects([&]{editor.apply(invalid);});
+        require(editor.undo() && editor.document().scene.get(editor.document().scene.find(key))->name==before.name,"Property undo failed");
+        require(editor.redo(),"Property redo failed");
+        auto copy=*editor.document().scene.get(editor.document().scene.find(key));copy.key.clear();
+        editor.apply(swan::CreateEntity{copy,{}});
+        require(editor.selection()!=key && editor.document().scene.get(editor.document().scene.find(editor.selection()))->name==copy.name,"Duplicate identity failed");
+        require(editor.undo() && editor.selection()==key,"Duplicate undo failed");
         editor.startPlay();auto authoredCount=editor.document().scene.size();
         editor.runtime().scene.destroy(editor.runtime().scene.find(key));editor.runtime().spawn.x=99;
         require(editor.document().scene.size()==authoredCount && editor.document().spawn.x!=99,"Play mutated authored data");
@@ -43,7 +56,10 @@ int main() {
         require(editor.runtime().scene.size()==authoredCount,"New play session retained mutations");editor.stopPlay();
         {std::ofstream output(path);output<<"broken";}
         rejects([&]{editor.load(path);});require(editor.document().scene.size()==authoredCount,"Failed load changed authored data");
-        editor.save(path);editor.load(path);
+        editor.save(path);
+        auto saved=swan::loadScene(path);
+        require(saved.scene.get(saved.scene.find(key))->name=="Renamed object","Properties not persisted");
+        editor.load(path);
         require(!editor.canUndo() && !editor.canRedo() && editor.selection().empty(),"Load retained old history");
         std::filesystem::remove(path);std::cout<<"Atomic edits, bounded undo/redo, selection and play isolation passed\n";
     } catch(const std::exception& error) {std::filesystem::remove(path);std::cerr<<error.what()<<'\n';return 1;}
