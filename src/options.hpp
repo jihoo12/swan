@@ -3,6 +3,7 @@
 namespace swan {
 struct Options {
     bool validation=false;
+    bool culling=true;
     bool x11=false;
     int frames=0;
     bool resizeTest=false,reloadTest=false;

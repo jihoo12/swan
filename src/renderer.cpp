@@ -1,4 +1,5 @@
 #include "renderer.hpp"
+#include "visibility.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <cstring>
@@ -73,7 +74,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,7,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,8,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -264,6 +265,7 @@ void VulkanRenderer::finish() {
     check(vkDeviceWaitIdle(device),"Wait shutdown");
     std::cout << "Mesh uploads: " << uploadedMeshes << "; resident meshes: " << gpuMeshes.size() << '\n';
     std::cout << "Texture uploads: " << uploadedTextures << "; resident textures: " << gpuTextures.size() << '\n';
+    std::cout << "Draw statistics: frames=" << renderedFrames << " submitted=" << submittedObjects << " culled=" << culledObjects << '\n';
     std::cout << "Validation errors: " << validationErrors << '\n';
     if(validationErrors) throw std::runtime_error("Vulkan validation reported errors");
 }
@@ -345,7 +347,11 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
     Push push{};
     push.vp=frame.camera.viewProjection(float(extent.width)/float(extent.height));
     push.eyeUvU=glm::vec4(frame.camera.position,1);
+    Frustum frustum(push.vp);
+    uint64_t visible=0,hidden=0;
     for(const auto& object:frame.objects) {
+        if(options.culling && !frustum.intersects(*object.mesh,object.transform)) {++hidden; continue;}
+        ++visible;
         push.positionUvV=glm::vec4(object.transform.position,object.material.uvScale.y);
         push.scaleGlow=glm::vec4(object.transform.scale,object.material.emission);
         push.eyeUvU.w=object.material.uvScale.x;
@@ -366,6 +372,7 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
     VkPipelineStageFlags waitStage=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO}; submit.waitSemaphoreCount=1; submit.pWaitSemaphores=&acquired; submit.pWaitDstStageMask=&waitStage; submit.commandBufferCount=1; submit.pCommandBuffers=&command; submit.signalSemaphoreCount=1; submit.pSignalSemaphores=&presentReady[index];
     check(vkResetFences(device,1,&fence),"Reset frame fence"); check(vkQueueSubmit(queue,1,&submit,fence),"Submit frame");
+    ++renderedFrames; submittedObjects+=visible; culledObjects+=hidden;
     VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR}; present.waitSemaphoreCount=1; present.pWaitSemaphores=&presentReady[index]; present.swapchainCount=1; present.pSwapchains=&swapchain; present.pImageIndices=&index;
     result=vkQueuePresentKHR(queue,&present);
     if(result==VK_ERROR_OUT_OF_DATE_KHR || result==VK_SUBOPTIMAL_KHR || suboptimal) rebuild(); else check(result,"Present");

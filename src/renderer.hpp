@@ -55,6 +55,7 @@ private:
     void synchronizeMeshes(const RenderFrame& frame);
     std::map<const MeshData*,GpuMesh> gpuMeshes;
     size_t uploadedMeshes=0;
+    uint64_t renderedFrames=0,submittedObjects=0,culledObjects=0;
     uint32_t memoryType(uint32_t mask,VkMemoryPropertyFlags flags);
     VkShaderModule shader(const char* name);
     Options options;

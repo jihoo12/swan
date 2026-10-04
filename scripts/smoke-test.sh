@@ -53,3 +53,23 @@ if [[ -f "$installed_hierarchy" ]]; then hierarchy_scene="$installed_hierarchy";
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --scene "$hierarchy_scene" --export-scene "$work/hierarchy.json"
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$work/hierarchy.json"
 timeout 60s "$binary" --x11 --validation --scene "$work/hierarchy.json" --reload-test --resize-test --frames 90
+# Compare totals with culling disabled, using the same static camera and frame count.
+timeout 60s "$binary" --x11 --validation --frames 15 >"$work/culled.log" 2>&1
+timeout 60s "$binary" --x11 --validation --no-culling --frames 15 >"$work/full.log" 2>&1
+python3 - "$work/culled.log" "$work/full.log" <<'PY'
+import re
+import sys
+from pathlib import Path
+def counts(path):
+    text = Path(path).read_text()
+    match = re.search(r'Draw statistics: frames=(\d+) submitted=(\d+) culled=(\d+)', text)
+    if not match or 'Validation errors: 0' not in text:
+        raise RuntimeError(f'Missing draw statistics or validation failed: {text}')
+    return tuple(map(int, match.groups()))
+frames, submitted, culled = counts(sys.argv[1])
+full_frames, full_submitted, full_culled = counts(sys.argv[2])
+assert frames == full_frames and frames > 0
+assert full_culled == 0 and culled > 0
+assert submitted + culled == full_submitted and submitted < full_submitted
+print(f'Culling comparison: {submitted}/{full_submitted} draw calls submitted over {frames} frames')
+PY
