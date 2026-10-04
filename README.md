@@ -1,12 +1,12 @@
 # Swan
 
-A small C++20 / Vulkan 1.3 3D engine with a playable camera demo, **The Quiet Garden**: a tiled courtyard, a circle of ruined pillars, stylized trees, and a hovering cyan crystal. Everything is procedural; no external art assets are needed.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.2 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. No external art assets are needed.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
 ## Run
 
-Linux with Nix flakes enabled and a Vulkan 1.3 driver is required. Both x86_64 and aarch64 Linux flake outputs are provided.
+Linux with Nix flakes enabled and a Vulkan 1.3 driver is required. The flake provides x86_64-linux and aarch64-linux outputs; development and runtime verification currently use x86_64 Linux.
 
 ```sh
 nix develop path:.
@@ -15,89 +15,132 @@ cmake --build build
 ./build/swan
 ```
 
-GLFW chooses the desktop backend automatically. Pass `--x11` to force X11; the automated smoke test uses this option to ensure it runs inside Xvfb even from a Wayland desktop.
+The game starts in walking mode. Click to look around, walk toward a golden shard, and press E when the window title says `E collect`. Collect all five to turn the central crystal gold. Progress and interaction hints appear in the window title and console.
 
-`path:.` includes newly created files even before they are tracked by Git. Once the project files are tracked, plain `nix develop` also works. `flake.lock` pins nixpkgs for reproducible dependencies.
+```sh
+./build/swan --overview
+```
 
-To build the installable package:
+`--overview` starts with the original elevated camera in flight mode. GLFW selects the desktop backend automatically; `--x11` forces X11. The automated smoke test uses X11 inside Xvfb, including when launched from a Wayland desktop.
+
+`path:.` includes new files before Git tracking. After tracking all project files, plain `nix develop` works too. `flake.lock` pins nixpkgs. Local build output is excluded from package sources.
+
+To build and run the installed package:
 
 ```sh
 nix build path:.
 ./result/bin/swan
 ```
 
-The package installs its SPIR-V shaders alongside the executable. Shader lookup uses the installed executable's location, then the CMake build directory; `--shader-dir PATH` overrides it.
+SPIR-V shaders are installed alongside the executable. Shader lookup uses the installed executable's location, then the CMake build directory. `--shader-dir PATH` overrides it.
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
-| Left click | Capture the mouse for looking around |
-| Mouse | Look while captured |
+| Left click / mouse | Capture the mouse / look |
 | W / A / S / D | Move horizontally |
-| Q / E | Descend / ascend |
 | Left Shift | Sprint |
-| Space | Pause the crystal animation |
-| R | Reset the camera |
+| Space | Jump in walking mode; ascend in flight mode |
+| Left Ctrl | Descend in flight mode |
+| E | Collect a nearby shard in walking mode |
+| F | Switch walking/flight; returning to walking respawns at the entrance |
+| P | Pause/resume movement and world animation; mouse look remains active |
+| R | Respawn in walking mode; collected shards remain collected |
 | Escape | Release the mouse; press again to quit |
 
-The window title shows FPS and object count. Movement uses elapsed time and stops at a minimum camera height. Losing focus releases the mouse.
+Losing focus releases the mouse and clears held movement. Walking uses gravity, grounded jumping, capsule collision, wall sliding, and automatic respawn after falling out of the world. Flight bypasses collision for inspecting the scene.
 
-## Engine
+## Architecture
 
-- GLFW window and keyboard/mouse input.
-- Vulkan 1.3 dynamic rendering, graphics/present queue selection, FIFO presentation.
-- Perspective camera, depth testing, per-object transforms, and procedural cube geometry generated in the vertex shader.
-- Directional sunlight, local cyan lighting, emissive materials, distance fog, and simple tone mapping.
-- Swapchain and depth attachment recreation on resize, including waiting while minimized.
-- One frame in flight, a frame fence, an acquire semaphore, and a presentation semaphore per swapchain image. This deliberately simple arrangement serializes shared depth-buffer use.
-- Optional Khronos validation with error reporting and a nonzero exit status for runtime validation errors.
-- Cleanup of partially initialized resources if startup fails.
+| CMake target | Responsibility |
+| --- | --- |
+| `swan_core` | Scene storage, entity lifetime, transforms/materials, static collision |
+| `swan_renderer` | GLFW input/window, Vulkan resources, render snapshots |
+| `swan_runtime` | Main loop, fixed simulation updates, render scheduling |
+| `swan_demo` | Procedural garden and sample gameplay |
+| `swan` | Command-line startup and game/runtime composition |
 
-This is an engine foundation with a visual demo. It currently has no mesh/texture import, physics, audio, editor, shadow maps, or bloom. The emissive crystal is lit geometry, not a post-processing glow effect. Scene objects are defined in `src/scene.hpp`; extend this file to create new worlds.
+The core and demo depend on GLM, with no GLFW or Vulkan dependency. CPU tests exercise gameplay without creating a window or device.
+
+The engine receives a `GameLayer` from the application. Each display frame samples held input and one-shot actions, applies game actions once, runs simulation updates at **120 Hz**, and renders a `RenderFrame` containing a camera and render objects. Camera position is interpolated between simulation updates. Frame delays are capped at 250 ms and 30 simulation steps to bound catch-up after a stall.
+
+```cpp
+swan::Game game(options.overview);
+swan::Engine engine(options);
+engine.run(game);
+```
+
+To implement another game, derive from `GameLayer` and implement `handleInput`, `fixedUpdate`, `renderFrame`, and `status`. Pass your layer to `Engine::run`; the renderer needs no game-specific changes. Link your application to `swan_runtime` and your game code. The default executable links the garden demo separately.
+
+`Scene` owns named entities with transforms, materials, optional animation, and solid/collectible flags. Keep `EntityId` handles rather than references across scene mutation. Deletion increments a slot generation; stale handles cannot access a replacement entity. Render snapshots contain values, so the GPU layer never owns gameplay entities.
+
+## Rendering and collision
+
+- Vulkan 1.3 dynamic rendering, perspective projection, depth testing, FIFO presentation.
+- Per-object yaw, scale, position, and procedural cube geometry generated in the vertex shader.
+- Directional sunlight, cyan local lighting, emissive materials, distance fog, and tone mapping.
+- Swapchain/depth recreation on resize and waiting while minimized.
+- One frame in flight, one frame fence, one acquire semaphore, and a presentation semaphore per swapchain image; shared depth use remains serialized.
+- Optional Khronos validation with runtime errors producing a nonzero exit status.
+- Upright capsule against static boxes rotated around the vertical axis. Movement is subdivided and contacts iteratively resolved, including floor, ceiling, and wall sliding.
+
+This is an early engine foundation. Collision is a character controller, not a general rigid-body simulator; it has no dynamic bodies, arbitrary mesh collision, or automatic stair climbing. Geometry is still procedural boxes. There is no mesh/texture import, audio, GUI editor, shadow mapping, or bloom yet. The crystal's emission changes its surface color without a bloom pass. These systems can be added on top of the existing scene/game/renderer boundaries.
 
 ## Verification
 
 ```sh
 nix develop path:.
+cmake -S . -B build -G Ninja
+cmake --build build
 ctest --test-dir build --output-on-failure
 ./build/swan --validation --frames 90 --resize-test
 ```
 
-For automated execution without a desktop or hardware GPU:
+For automated rendering without a desktop or hardware GPU:
 
 ```sh
 nix develop path:. --command bash scripts/smoke-test.sh
 ```
 
-The smoke test uses Xvfb and Mesa Lavapipe, enables synchronization validation, renders 90 frames, and changes the window size twice. The CPU scene test checks generated geometry dimensions, finite coordinates, animation count, and camera direction normalization.
+The smoke test uses Xvfb and Mesa Lavapipe, enables synchronization validation, renders 90 frames, and resizes the window twice. It checks walking and overview modes. To test installed shader lookup too:
+
+```sh
+nix build path:.
+nix develop path:. --command bash scripts/smoke-test.sh ./result/bin/swan
+```
+
+CPU tests cover entity deletion/reuse and invalid creation, procedural scene invariants, capsule floor/wall/ceiling contacts and rotated walls, equivalent movement at 60/144 display frames per second, jump/landing, pause, collection/completion, mode switching, and bounded simulation catch-up. The tests use explicit checks in release builds.
 
 ```sh
 nix flake check path:.
 ./build/swan --help
 ```
 
-`nix flake check` builds the package and runs the CPU scene test; the graphical smoke test is separate.
+`nix flake check` builds the package and runs both CPU test executables. Graphical smoke tests are separate.
 
 ## Layout
 
 | File | Responsibility |
 | --- | --- |
-| `flake.nix`, `flake.lock` | Pinned toolchain, dependencies, shell, package, build check |
-| `CMakeLists.txt` | C++ build, GLSL-to-SPIR-V compilation, installation, tests |
-| `src/main.cpp` | Command-line options and error reporting |
-| `src/engine.hpp`, `src/engine.cpp` | Vulkan resource ownership, input, camera, render loop |
-| `src/scene.hpp` | Procedural world and camera direction |
+| `flake.nix`, `flake.lock` | Pinned toolchain, dependencies, shell, package, checks |
+| `src/main.cpp`, `src/options.hpp` | Startup and command-line options |
+| `src/engine.*`, `src/fixed_step.hpp` | Runtime orchestration and simulation clock |
+| `src/game_layer.hpp`, `src/input.hpp`, `src/render_frame.hpp` | Game/runtime/renderer interfaces |
+| `src/scene.*`, `src/camera.hpp` | Entity storage and camera math |
+| `src/physics.*` | Character capsule against static boxes |
+| `src/game.*`, `src/garden.*` | Sample gameplay and procedural content |
+| `src/renderer.*` | GLFW and Vulkan backend |
 | `shaders/scene.vert`, `shaders/scene.frag` | Geometry, transforms, lighting, fog |
-| `scripts/smoke-test.sh` | Software-rendered validation and resize test |
+| `tests/`, `scripts/smoke-test.sh` | CPU and graphical verification |
 
 ## Driver troubleshooting
 
-`vulkaninfo --summary` should list a working device. On NixOS, enable graphics support in the system configuration; the development shell supplies libraries and tools, while hardware drivers remain a system responsibility. On other Linux distributions, use the host Vulkan driver setup (a NixGL wrapper may be needed for Nix applications). The smoke test selects its own software driver and does not require this integration.
+`vulkaninfo --summary` should list a working device. On NixOS, enable graphics support in the system configuration; hardware drivers remain a system responsibility. On other Linux distributions, use the host Vulkan driver setup; a NixGL wrapper may be needed. The smoke test selects its own software driver.
 
 ## References
 
-The renderer follows Vulkan's documented dynamic-rendering, depth, and synchronization rules. Useful references: [Khronos Vulkan tutorial](https://docs.vulkan.org/tutorial/latest/01_Overview.html), [depth buffering](https://docs.vulkan.org/tutorial/latest/07_Depth_buffering.html), and [rendering and presentation](https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/03_Drawing/02_Rendering_and_presentation.html).
+[Khronos Vulkan tutorial](https://docs.vulkan.org/tutorial/latest/01_Overview.html), [depth buffering](https://docs.vulkan.org/tutorial/latest/07_Depth_buffering.html), and [rendering and presentation](https://docs.vulkan.org/tutorial/latest/03_Drawing_a_triangle/03_Drawing/02_Rendering_and_presentation.html).
 
 ## License
 

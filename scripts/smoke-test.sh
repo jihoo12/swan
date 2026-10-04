@@ -28,3 +28,4 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 binary=${1:-./build/swan}
 timeout 60s "$binary" --x11 --validation --frames 90 --resize-test
+timeout 60s "$binary" --x11 --validation --overview --frames 45
