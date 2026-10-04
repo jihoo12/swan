@@ -4,6 +4,13 @@
 #include <charconv>
 #include <algorithm>
 namespace swan {
+Transform composeTransform(const Transform& parent,const Transform& child) {
+    if(parent.scale.x!=parent.scale.y || parent.scale.x!=parent.scale.z || parent.scale.x<=0)
+        throw std::invalid_argument("Hierarchy parents require positive uniform scale");
+    auto p=child.position*parent.scale.x;
+    float c=std::cos(parent.yaw),s=std::sin(parent.yaw);
+    return {parent.position+glm::vec3(c*p.x+s*p.z,p.y,-s*p.x+c*p.z),child.scale*parent.scale.x,child.yaw+parent.yaw};
+}
 EntityId Scene::create(Entity entity) {
     const auto& t=entity.transform;
     for(int i=0;i<3;++i) {
@@ -58,13 +65,7 @@ Transform Scene::worldTransform(EntityId id) const {
     while(ancestor) {
         if(++depth>64 || !get(*ancestor)) throw std::invalid_argument("Invalid hierarchy depth/parent");
         const auto& entity=*get(*ancestor);
-        const auto& t=entity.transform;
-        if(t.scale.x!=t.scale.y || t.scale.x!=t.scale.z || t.scale.x<=0)
-            throw std::invalid_argument("Hierarchy parents require positive uniform scale");
-        auto p=result.position*t.scale.x;
-        float c=std::cos(t.yaw),s=std::sin(t.yaw);
-        result.position=t.position+glm::vec3(c*p.x+s*p.z,p.y,-s*p.x+c*p.z);
-        result.scale*=t.scale.x; result.yaw+=t.yaw;
+        result=composeTransform(entity.transform,result);
         if(get(id)->solid && entity.animation) throw std::invalid_argument("Solid collider cannot inherit animation");
         ancestor=parent(*ancestor);
     }

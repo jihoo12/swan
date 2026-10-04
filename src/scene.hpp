@@ -7,6 +7,8 @@
 #include <vector>
 namespace swan {
 struct Transform { glm::vec3 position{},scale{1}; float yaw=0; };
+// Compose a child with a uniform-scale, yaw-only parent.
+Transform composeTransform(const Transform& parent,const Transform& child);
 struct Animation { float baseHeight=0,phase=0,bob=0.2f,speed=0.5f; };
 struct EntityId {
     uint32_t index=std::numeric_limits<uint32_t>::max(),generation=0;

@@ -74,7 +74,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,8,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,9,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;

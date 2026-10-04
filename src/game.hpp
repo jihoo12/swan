@@ -1,5 +1,6 @@
 #pragma once
 #include "garden.hpp"
+#include "render_pose.hpp"
 #include "input.hpp"
 #include "game_layer.hpp"
 #include <string>
@@ -29,6 +30,8 @@ private:
     void collect();
     void replaceDefinition(Garden initial);
     Garden definition,garden;
+    RenderPose previousPose;
+    float previousTime=0;
     std::filesystem::path sourcePath,savePath;
     std::string fileMessage;
     Camera view;

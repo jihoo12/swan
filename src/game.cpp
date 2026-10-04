@@ -14,6 +14,8 @@ Game::Game(Garden initial,bool overview,std::filesystem::path source,std::filesy
 }
 void Game::replaceDefinition(Garden initial) {
     Garden runtime=initial; // Complete potentially throwing allocations before replacing the world.
+    RenderPose pose; pose.capture(runtime.scene);
+    previousPose=std::move(pose); previousTime=0;
     definition=std::move(initial); garden=std::move(runtime);
     time=0; collectedCount=0; paused=false; flight=false; view=Camera{};
     spawn(definition.spawn);
@@ -68,7 +70,7 @@ void Game::handleInput(const Input& input) {
             catch(const std::exception& e) { fileMessage="Save failed (see console)"; std::cerr << "Save: " << e.what() << '\n'; }
         }
     }
-    if(input.pause) { paused=!paused; jumpPending=false; }
+    if(input.pause) { paused=!paused; jumpPending=false; previousPose.capture(garden.scene); previousTime=time; previousEye=view.position; }
     if(input.reset) { flight=false; view=Camera{}; spawn(definition.spawn); }
     if(input.toggleFlight) {
         if(flight) { flight=false; view=Camera{}; spawn(definition.spawn); }
@@ -78,6 +80,7 @@ void Game::handleInput(const Input& input) {
     if(input.interact && !paused && !flight) collect();
 }
 void Game::fixedUpdate(float dt,const Input& input) {
+    previousPose.capture(garden.scene); previousTime=time;
     previousEye=view.position;
     if(paused) return;
     time+=dt;
@@ -107,12 +110,13 @@ void Game::fixedUpdate(float dt,const Input& input) {
     view.position=feet+glm::vec3(0,eyeHeight,0);
 }
 RenderFrame Game::renderFrame(float interpolation) const {
-    RenderFrame frame; frame.camera=view; frame.time=time;
-    frame.camera.position=glm::mix(previousEye,view.position,std::clamp(interpolation,0.0f,1.0f));
+    float alpha=std::isfinite(interpolation)?std::clamp(interpolation,0.0f,1.0f):1.0f;
+    RenderFrame frame; frame.camera=view; frame.time=glm::mix(previousTime,time,alpha);
+    frame.camera.position=glm::mix(previousEye,view.position,alpha);
     frame.objects.reserve(garden.scene.size());
     for(auto id:garden.scene.entities()) {
         const auto* entity=garden.scene.get(id);
-        frame.objects.push_back({garden.scene.worldTransform(id),garden.scene.assets().get(entity->materialId),garden.scene.meshes().get(entity->meshId).data,garden.scene.textures().get(garden.scene.assets().get(entity->materialId).textureId).data});
+        frame.objects.push_back({previousPose.worldTransform(garden.scene,id,alpha),garden.scene.assets().get(entity->materialId),garden.scene.meshes().get(entity->meshId).data,garden.scene.textures().get(garden.scene.assets().get(entity->materialId).textureId).data});
     }
     return frame;
 }

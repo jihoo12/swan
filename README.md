@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.8 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.9 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -184,3 +184,7 @@ Hierarchy links use generation-checked handles at runtime and stable entity keys
 Version 0.8 adds conservative CPU frustum culling using each mesh's local bounds and the object's world transform. Objects wholly outside one camera plane skip Vulkan draw commands; intersecting boxes remain visible. Tests use Vulkan's zero-to-one depth convention, including the near plane. Resizing and hierarchy animation automatically use the current projection and world transforms.
 
 Run with `--no-culling` to compare the same scene with every object submitted. Shutdown prints cumulative drawn-frame, submitted-object, and culled-object counts. Culling does not change gameplay or GPU asset residency: hidden scene assets stay cached, avoiding repeated uploads while turning the camera. This is a linear scan; occlusion culling, spatial indexing, and draw batching are not implemented.
+
+Version 0.9 interpolates object poses between the previous and current fixed simulation ticks. Position and scale blend linearly; yaw takes the shortest angular path across wraparound. Local poses blend before hierarchy composition so a child follows its parent's rotation without cutting across its orbit. Rendering and frustum culling use the same interpolated world pose; collisions and interactions use the current fixed-step state.
+
+Transform history contains generation-checked handles and parent links, without copying meshes or textures. New/reused entities and changed parent links snap to their current pose, deleted entities disappear immediately, reload resets history, and pause freezes the current pose. Interpolation factors clamp to 0–1; nonfinite values select the current state. Mouse-look remains immediate.
