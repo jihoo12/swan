@@ -7,12 +7,12 @@ namespace {
 void checked(VkResult result,const char* operation) {
     if(result!=VK_SUCCESS) throw std::runtime_error(std::string(operation)+" (VkResult "+std::to_string(result)+")");
 }
-VkImageMemoryBarrier transition(VkImage image,VkImageLayout before,VkImageLayout after,VkAccessFlags src,VkAccessFlags dst) {
+VkImageMemoryBarrier transition(VkImage image,VkImageLayout before,VkImageLayout after,VkAccessFlags src,VkAccessFlags dst,uint32_t levels) {
     VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     barrier.image=image; barrier.oldLayout=before; barrier.newLayout=after;
     barrier.srcAccessMask=src; barrier.dstAccessMask=dst;
     barrier.srcQueueFamilyIndex=barrier.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
-    barrier.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1}; return barrier;
+    barrier.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,levels,0,1}; return barrier;
 }
 }
 void VulkanRenderer::createDescriptors() {
@@ -30,14 +30,25 @@ void VulkanRenderer::createDescriptors() {
     checked(vkCreateDescriptorPool(device,&poolInfo,nullptr,&texturePool),"Texture descriptor pool");
     VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     sampler.magFilter=sampler.minFilter=VK_FILTER_LINEAR;
-    sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_LINEAR;
     sampler.addressModeU=sampler.addressModeV=sampler.addressModeW=VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sampler.maxLod=0;
+    sampler.maxLod=VK_LOD_CLAMP_NONE;
     checked(vkCreateSampler(device,&sampler,nullptr,&textureSampler),"Texture sampler");
 }
 VulkanRenderer::GpuTexture VulkanRenderer::uploadTexture(SharedTexture data) {
     if(!data || !data->width || !data->height || data->width>4096 || data->height>4096 ||
        data->rgba.size()!=size_t(data->width)*data->height*4) throw std::invalid_argument("Invalid texture pixels/dimensions");
+    auto levels=buildMipChain(*data);
+    std::vector<uint8_t> pixels;
+    std::vector<VkBufferImageCopy> copies;
+    for (uint32_t level=0;level<levels.size();++level) {
+        VkBufferImageCopy copy{}; copy.bufferOffset=pixels.size();
+        copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,level,0,1};
+        copy.imageExtent={levels[level].width,levels[level].height,1};
+        copies.push_back(copy);
+        pixels.insert(pixels.end(),levels[level].rgba.begin(),levels[level].rgba.end());
+    }
+    uint32_t mipLevels=static_cast<uint32_t>(levels.size());
     GpuTexture texture; texture.owner=std::move(data);
     VkBuffer staging=VK_NULL_HANDLE; VkDeviceMemory stagingMemory=VK_NULL_HANDLE;
     VkCommandBuffer upload=VK_NULL_HANDLE; bool submitted=false;
@@ -49,7 +60,7 @@ VulkanRenderer::GpuTexture VulkanRenderer::uploadTexture(SharedTexture data) {
     };
     try {
         VkBufferCreateInfo bufferInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        bufferInfo.size=texture.owner->rgba.size(); bufferInfo.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        bufferInfo.size=pixels.size(); bufferInfo.usage=VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         bufferInfo.sharingMode=VK_SHARING_MODE_EXCLUSIVE;
         checked(vkCreateBuffer(device,&bufferInfo,nullptr,&staging),"Texture staging buffer");
         VkMemoryRequirements requirements; vkGetBufferMemoryRequirements(device,staging,&requirements);
@@ -59,13 +70,13 @@ VulkanRenderer::GpuTexture VulkanRenderer::uploadTexture(SharedTexture data) {
         checked(vkAllocateMemory(device,&allocation,nullptr,&stagingMemory),"Texture staging memory");
         checked(vkBindBufferMemory(device,staging,stagingMemory,0),"Bind texture staging memory");
         void* mapped=nullptr; checked(vkMapMemory(device,stagingMemory,0,VK_WHOLE_SIZE,0,&mapped),"Map texture pixels");
-        std::memcpy(mapped,texture.owner->rgba.data(),texture.owner->rgba.size());
+        std::memcpy(mapped,pixels.data(),pixels.size());
         VkMappedMemoryRange range{VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE}; range.memory=stagingMemory; range.size=VK_WHOLE_SIZE;
         auto result=vkFlushMappedMemoryRanges(device,1,&range); vkUnmapMemory(device,stagingMemory);
         checked(result,"Flush texture pixels");
         VkImageCreateInfo image{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO}; image.imageType=VK_IMAGE_TYPE_2D;
         image.format=VK_FORMAT_R8G8B8A8_SRGB; image.extent={texture.owner->width,texture.owner->height,1};
-        image.mipLevels=1; image.arrayLayers=1; image.samples=VK_SAMPLE_COUNT_1_BIT; image.tiling=VK_IMAGE_TILING_OPTIMAL;
+        image.mipLevels=mipLevels; image.arrayLayers=1; image.samples=VK_SAMPLE_COUNT_1_BIT; image.tiling=VK_IMAGE_TILING_OPTIMAL;
         image.usage=VK_IMAGE_USAGE_TRANSFER_DST_BIT|VK_IMAGE_USAGE_SAMPLED_BIT;
         checked(vkCreateImage(device,&image,nullptr,&texture.image),"Texture image");
         vkGetImageMemoryRequirements(device,texture.image,&requirements);
@@ -78,18 +89,18 @@ VulkanRenderer::GpuTexture VulkanRenderer::uploadTexture(SharedTexture data) {
         checked(vkAllocateCommandBuffers(device,&commandInfo,&upload),"Texture upload command");
         VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO}; begin.flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         checked(vkBeginCommandBuffer(upload,&begin),"Begin texture upload");
-        auto toTransfer=transition(texture.image,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,0,VK_ACCESS_TRANSFER_WRITE_BIT);
+        auto toTransfer=transition(texture.image,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,0,VK_ACCESS_TRANSFER_WRITE_BIT,mipLevels);
         vkCmdPipelineBarrier(upload,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_TRANSFER_BIT,0,0,nullptr,0,nullptr,1,&toTransfer);
-        VkBufferImageCopy copy{}; copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1}; copy.imageExtent=image.extent;
-        vkCmdCopyBufferToImage(upload,staging,texture.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,1,&copy);
-        auto toSample=transition(texture.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT);
+        vkCmdCopyBufferToImage(upload,staging,texture.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               static_cast<uint32_t>(copies.size()),copies.data());
+        auto toSample=transition(texture.image,VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_ACCESS_TRANSFER_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT,mipLevels);
         vkCmdPipelineBarrier(upload,VK_PIPELINE_STAGE_TRANSFER_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,nullptr,0,nullptr,1,&toSample);
         checked(vkEndCommandBuffer(upload),"End texture upload");
         VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO}; submit.commandBufferCount=1; submit.pCommandBuffers=&upload;
         checked(vkQueueSubmit(queue,1,&submit,VK_NULL_HANDLE),"Submit texture upload"); submitted=true;
         checked(vkQueueWaitIdle(queue),"Wait texture upload"); submitted=false;
         VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO}; view.image=texture.image; view.viewType=VK_IMAGE_VIEW_TYPE_2D;
-        view.format=image.format; view.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+        view.format=image.format; view.subresourceRange={VK_IMAGE_ASPECT_COLOR_BIT,0,mipLevels,0,1};
         checked(vkCreateImageView(device,&view,nullptr,&texture.view),"Texture view");
         VkDescriptorSetAllocateInfo descriptor{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         descriptor.descriptorPool=texturePool; descriptor.descriptorSetCount=1; descriptor.pSetLayouts=&textureLayout;

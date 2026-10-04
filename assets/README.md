@@ -64,7 +64,7 @@ The version 3 example adds an authored courtyard PNG to the cube floor and an im
 }
 ```
 
-Paths resolve relative to the scene file. Up to 256 imported textures are supported, each limited to 16 MiB encoded and 4096 by 4096 pixels. PNGs decode to RGBA8; the GPU image uses sRGB so sampled RGB enters lighting in linear space. Alpha is decoded but currently ignored by the opaque renderer. JPEG, normal maps, mipmaps, and anisotropic filtering are not implemented yet.
+Paths resolve relative to the scene file. Up to 256 imported textures are supported, each limited to 16 MiB encoded and 4096 by 4096 pixels. PNGs decode to RGBA8; the GPU image uses sRGB so sampled RGB enters lighting in linear space. Alpha is decoded but currently ignored by the opaque renderer. JPEG, normal maps, and anisotropic filtering are not implemented yet.
 
 `texture` defaults to `builtin:white` and `uv_scale` defaults to `[1, 1]`. UV scales must be positive and finite. Sampling uses linear filtering and repeat addressing. Each cube face has UVs from 0 to 1; imported meshes use OBJ `vt` coordinates, with V flipped for top-to-bottom PNG storage. Vertex sharing preserves seams where UV indices differ. Missing UVs sample the same point across that face, so author UVs before assigning a detailed texture to an imported model.
 
@@ -85,3 +85,5 @@ Edit the input file in your text editor and press F5 in the running game. Succes
 F6 exports the **loaded authored definition** to the explicit `--save-scene` path. It does not save transient animation, the player's position, removed collectibles, or progress. Use a different output path to keep edits to the input file from being replaced by its currently loaded definition. Save writes a unique temporary file beside the destination and renames it after a complete write; invalid data or write failures do not truncate the destination. This provides atomic replacement on Linux, not guaranteed persistence across power loss.
 
 Scene paths are explicit and relative to the working directory when not absolute. The Nix package also installs these examples under `share/swan/assets/` next to `bin/`.
+
+Mipmaps are generated automatically down to 1x1 in linear RGB, with linear alpha averaging. Vulkan uses trilinear filtering across these levels. No scene schema change or authored mip files are needed.

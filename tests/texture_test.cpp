@@ -17,6 +17,19 @@ int main() {
     try {
         auto white=swan::whiteTexture();
         require(white==swan::whiteTexture() && white->rgba==std::vector<uint8_t>({255,255,255,255}),"Fallback texture not shared/white");
+        auto whiteMips=swan::buildMipChain(*white);
+        require(whiteMips.size()==1 && whiteMips[0].rgba==white->rgba,"White mip chain incorrect");
+        swan::TextureData contrast{2,1,{0,0,0,0,255,255,255,255}};
+        auto mips=swan::buildMipChain(contrast);
+        require(mips.size()==2 && mips[1].width==1 && mips[1].height==1,"Rectangular mip dimensions incorrect");
+        require(mips[1].rgba==std::vector<uint8_t>({188,188,188,128}),"Mip filtering is not linear RGB/alpha");
+        swan::TextureData odd{3,1,{0,0,0,255,0,0,0,255,255,255,255,255}};
+        require(swan::buildMipChain(odd)[1].rgba[0]==156,"Odd edge pixel lost");
+        swan::TextureData tall{1,5,std::vector<uint8_t>(20,255)};
+        auto tallMips=swan::buildMipChain(tall);
+        require(tallMips.size()==3 && tallMips[1].height==2 && tallMips[2].height==1 && tallMips[2].rgba[0]==255,"Tall mip chain incorrect");
+        rejects([&]{swan::buildMipChain(swan::TextureData{0,1,{}});},"Zero size mip source accepted");
+        rejects([&]{swan::buildMipChain(swan::TextureData{2,2,{255}});},"Truncated mip source accepted");
         auto root=std::filesystem::path(SWAN_TEST_ASSET_DIR);
         auto source=root/"textures/courtyard.png";
         auto texture=swan::loadPngTexture(source);

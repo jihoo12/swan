@@ -1,8 +1,48 @@
 #include "texture.hpp"
 #include <png.h>
+#include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <stdexcept>
 namespace swan {
+std::vector<TextureData> buildMipChain(const TextureData& texture) {
+    if (!texture.width || !texture.height || texture.width>4096 || texture.height>4096 ||
+        texture.rgba.size()!=size_t(texture.width)*texture.height*4)
+        throw std::invalid_argument("Invalid mipmap source");
+    auto linear=[](uint8_t value) {
+        double s=value/255.0;
+        return s<=0.04045 ? s/12.92 : std::pow((s+0.055)/1.055,2.4);
+    };
+    auto encoded=[](double value) {
+        double s=value<=0.0031308 ? 12.92*value : 1.055*std::pow(value,1.0/2.4)-0.055;
+        return static_cast<uint8_t>(std::clamp(std::lround(s*255),0l,255l));
+    };
+    std::vector<TextureData> levels{texture};
+    while (levels.back().width>1 || levels.back().height>1) {
+        const auto& source=levels.back();
+        TextureData next{std::max(1u,source.width/2),std::max(1u,source.height/2),{}};
+        next.rgba.resize(size_t(next.width)*next.height*4);
+        // Area filtering includes the last row/column of odd-sized images.
+        for (uint32_t y=0;y<next.height;++y) for (uint32_t x=0;x<next.width;++x) {
+            double left=double(x)*source.width/next.width, right=double(x+1)*source.width/next.width;
+            double top=double(y)*source.height/next.height, bottom=double(y+1)*source.height/next.height;
+            double sum[4]{}, area=(right-left)*(bottom-top);
+            for (uint32_t sy=uint32_t(top);sy<std::ceil(bottom);++sy)
+                for (uint32_t sx=uint32_t(left);sx<std::ceil(right);++sx) {
+                    double weight=(std::min(right,double(sx+1))-std::max(left,double(sx))) *
+                                  (std::min(bottom,double(sy+1))-std::max(top,double(sy)));
+                    auto offset=(size_t(sy)*source.width+sx)*4;
+                    for (int c=0;c<3;++c) sum[c]+=linear(source.rgba[offset+c])*weight;
+                    sum[3]+=source.rgba[offset+3]*weight;
+                }
+            auto offset=(size_t(y)*next.width+x)*4;
+            for (int c=0;c<3;++c) next.rgba[offset+c]=encoded(sum[c]/area);
+            next.rgba[offset+3]=static_cast<uint8_t>(std::lround(sum[3]/area));
+        }
+        levels.push_back(std::move(next));
+    }
+    return levels;
+}
 SharedTexture whiteTexture() {
     static const SharedTexture texture=std::make_shared<TextureData>(TextureData{1,1,{255,255,255,255}});
     return texture;

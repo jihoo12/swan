@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.5 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine. Version 0.6 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -103,7 +103,7 @@ To implement another game, derive from `GameLayer` and implement `handleInput`, 
 - Mesh upload currently uses host-visible memory with explicit flushing. Texture pixels use a staging buffer and device-local sRGB images, with layout transitions before sampling.
 - Shared linear/repeat sampler, one combined-image-sampler descriptor per cached texture, and white fallback for untextured materials. Texture images/views/descriptors are retired after the frame fence.
 - Per-material UV tiling; built-in cube face UVs and imported OBJ UVs, including seams. Textures modulate linear material color and emission.
-- Texture upload waits for its queue to finish; asynchronous streaming, mipmaps, anisotropic filtering, and device-local mesh staging are future optimizations.
+- Texture upload waits for its queue to finish; asynchronous streaming, anisotropic filtering, and device-local mesh staging are future optimizations.
 - Directional sunlight, cyan local lighting, emissive materials, distance fog, and tone mapping.
 - Swapchain/depth recreation on resize and waiting while minimized.
 - One frame in flight, one frame fence, one acquire semaphore, and a presentation semaphore per swapchain image; shared depth use remains serialized.
@@ -174,3 +174,5 @@ nix flake check path:.
 ## License
 
 Apache-2.0; see [LICENSE](LICENSE).
+
+Textures receive a full CPU-generated mip chain with area filtering in linear RGB, then use trilinear Vulkan sampling. Odd-sized images retain their edge pixels; the 1x1 white fallback stays a single level. This reduces texture shimmer at distance without requiring GPU blit support. See the [Vulkan sampler specification](https://docs.vulkan.org/spec/latest/chapters/samplers.html).
