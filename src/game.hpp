@@ -11,6 +11,7 @@
 namespace swan {
 // Gameplay has no GLFW/Vulkan dependency; it can run entirely in CPU tests.
 class ScriptRuntime;
+class FxRuntime;
 class Game final : public GameLayer {
 public:
     explicit Game(bool overview=false);
@@ -37,6 +38,7 @@ public:
     // Script output and errors since the last call (oldest first, at most 256 kept).
     std::vector<std::string> takeMessages() override;
     const ScriptRuntime* scripts() const { return scriptRuntime.get(); }
+    const FxRuntime& effects() const { return *fx; }
     bool flying() const { return flight; }
     bool isPaused() const { return paused; }
     bool onGround() const { return grounded; }
@@ -52,6 +54,7 @@ private:
     void replaceDefinition(Garden initial);
     Garden definition,garden;
     std::unique_ptr<ScriptRuntime> scriptRuntime;
+    std::unique_ptr<FxRuntime> fx;
     std::vector<std::string> messages;
     RenderPose previousPose;
     float previousTime=0;

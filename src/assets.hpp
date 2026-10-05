@@ -1,4 +1,5 @@
 #pragma once
+#include "fx.hpp"
 #include "mesh.hpp"
 #include "model.hpp"
 #include "texture.hpp"
@@ -44,6 +45,18 @@ public:
     const std::map<std::string,ScriptAsset>& entries() const { return scripts; }
 private:
     std::map<std::string,ScriptAsset> scripts;
+};
+// Particle effect definitions (validated on insertion), shared between scene copies.
+using SharedEffect=std::shared_ptr<const EffectDef>;
+class EffectAssets {
+public:
+    void set(std::string id,EffectDef effect);
+    bool erase(const std::string& id) { return effects.erase(id)>0; }
+    const SharedEffect& get(const std::string& id) const;
+    bool contains(const std::string& id) const { return effects.contains(id); }
+    const std::map<std::string,SharedEffect>& entries() const { return effects; }
+private:
+    std::map<std::string,SharedEffect> effects;
 };
 struct Material {
     glm::vec3 color{1}; float emission=0;

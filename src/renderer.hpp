@@ -26,6 +26,9 @@ public:
     void setTitle(const std::string& title);
     void resize(int width, int height);
     void finish();
+    // Headless mode (Options::headless): render one frame offscreen and read it back as RGBA8
+    // sRGB pixels. Synchronous; reuses the target and readback buffer while the size is unchanged.
+    TextureData renderImage(const RenderFrame& frame,glm::uvec2 size);
 private:
     void initialize();
     void initializeGui();
@@ -35,9 +38,9 @@ private:
     // Offscreen scene image sampled by the GUI viewport; resized between frames, never mid-frame.
     struct SceneTarget {
         VkExtent2D extent{};
-        VkImage color=VK_NULL_HANDLE,depth=VK_NULL_HANDLE;
-        VkDeviceMemory colorMemory=VK_NULL_HANDLE,depthMemory=VK_NULL_HANDLE;
-        VkImageView colorView=VK_NULL_HANDLE,depthView=VK_NULL_HANDLE;
+        VkImage color=VK_NULL_HANDLE;
+        VkDeviceMemory colorMemory=VK_NULL_HANDLE;
+        VkImageView colorView=VK_NULL_HANDLE;
         VkDescriptorSet texture=VK_NULL_HANDLE;
     };
     SceneTarget sceneTarget;
@@ -45,7 +48,46 @@ private:
     void createSceneTarget(VkExtent2D extent);
     void destroySceneTarget();
     VkImage createImage(VkExtent2D size,VkFormat imageFormat,VkImageUsageFlags usage,VkImageAspectFlags aspect,VkDeviceMemory& memory,VkImageView& view);
-    void recordScene(const RenderFrame& frame,VkImageView colorView,VkImageView depthTarget,VkExtent2D size);
+    // Renders the scene and particles into the HDR target, then bloom and the tone-mapped
+    // composite into `output` (already in COLOR_ATTACHMENT_OPTIMAL layout).
+    void recordScene(const RenderFrame& frame,VkImageView output,VkExtent2D size);
+    // Particle billboards: alpha batches sorted far to near, then additive batches.
+    void createParticlePipelines();
+    void recordParticles(const RenderFrame& frame);
+    void reserveParticles(VkDeviceSize bytes);
+    void releaseParticles();
+    // HDR post-process: frame uniforms (set 1 of scene/particle pipelines), the float color/depth
+    // target, a bloom mip chain, and the composite into the output format.
+    struct Image { VkImage image=VK_NULL_HANDLE; VkDeviceMemory memory=VK_NULL_HANDLE; VkImageView view=VK_NULL_HANDLE; VkExtent2D extent{}; };
+    struct PostTargets { VkExtent2D extent{}; Image hdr,depth; std::vector<Image> bloom; std::vector<VkDescriptorSet> sets; };
+    void createFrameResources();
+    void writeFrameUniforms(const RenderFrame& frame,const glm::mat4& viewProjection);
+    void createPostPipelines();
+    void createPostTargets(VkExtent2D extent);
+    void destroyPostTargets();
+    void destroyImage(Image& image);
+    void recordPost(const RenderFrame& frame,VkImageView output,VkExtent2D size);
+    static constexpr VkFormat hdrFormat=VK_FORMAT_R16G16B16A16_SFLOAT;
+    PostTargets post;
+    VkDescriptorSetLayout frameLayout=VK_NULL_HANDLE,postSetLayout=VK_NULL_HANDLE;
+    VkDescriptorPool framePool=VK_NULL_HANDLE,postPool=VK_NULL_HANDLE;
+    VkDescriptorSet frameSet=VK_NULL_HANDLE;
+    VkBuffer frameBuffer=VK_NULL_HANDLE;
+    VkDeviceMemory frameMemory=VK_NULL_HANDLE;
+    void* frameMapped=nullptr;
+    VkSampler postSampler=VK_NULL_HANDLE;
+    VkPipelineLayout postLayout=VK_NULL_HANDLE;
+    VkPipeline postDown=VK_NULL_HANDLE,postUp=VK_NULL_HANDLE,postComposite=VK_NULL_HANDLE;
+    VkPipeline particleAdditive=VK_NULL_HANDLE,particleAlpha=VK_NULL_HANDLE;
+    VkBuffer particleBuffer=VK_NULL_HANDLE;
+    VkDeviceMemory particleMemory=VK_NULL_HANDLE;
+    void* particleMapped=nullptr;
+    VkDeviceSize particleCapacity=0;
+    uint64_t drawnParticles=0;
+    VkBuffer readback=VK_NULL_HANDLE;
+    VkDeviceMemory readbackMemory=VK_NULL_HANDLE;
+    VkDeviceSize readbackCapacity=0;
+    void releaseReadback();
     uint64_t frameVisible=0,frameCulled=0;
     bool encodeSrgb=false;
     void cleanup();
@@ -100,9 +142,6 @@ private:
     std::vector<VkImage> images;
     std::vector<VkImageView> views;
     std::vector<VkSemaphore> presentReady;
-    VkImage depth=VK_NULL_HANDLE;
-    VkDeviceMemory depthMemory=VK_NULL_HANDLE;
-    VkImageView depthView=VK_NULL_HANDLE;
     VkPipelineLayout layout=VK_NULL_HANDLE;
     VkPipeline pipeline=VK_NULL_HANDLE;
     VkCommandPool pool=VK_NULL_HANDLE;

@@ -50,6 +50,7 @@ struct ScriptRuntime::Impl {
     int game=LUA_NOREF;
     std::string message;
     size_t failures=0;
+    ScriptRuntime::EffectPlayer effects;
     Impl(Scene& scene,Log log):engine(ScriptEngine::Mode::Sandbox,[this](const std::string& line){report(line);}),scene(scene),log(std::move(log)) {}
     lua_State* L() const {return engine.state();}
     void report(const std::string& line) {if(log) log(line);}
@@ -186,6 +187,15 @@ int bindRuntime(lua_State* L) {
                         auto id=lua::string(L,2,"material");
                         if(!runtimeOf(L)->scene.assets().contains(id)) throw std::invalid_argument("unknown material "+id);
                         liveEntity(L,1).materialId=id;return 0;});}},
+        {"effect",[](lua_State* L){return protect(L,[&]{
+            const auto& effect=liveEntity(L,1).effectId;
+            if(effect.empty()) lua_pushnil(L); else lua::push(L,effect);
+            return 1;});},
+                  [](lua_State* L){return protect(L,[&]{
+                      // nil or false detaches; live particles finish on their own.
+                      std::string effect=lua_isnoneornil(L,2) || (lua_type(L,2)==LUA_TBOOLEAN && !lua_toboolean(L,2))?std::string():lua::string(L,2,"effect");
+                      if(!effect.empty() && !runtimeOf(L)->scene.effects().contains(effect)) throw std::invalid_argument("unknown effect "+effect);
+                      liveEntity(L,1).effectId=effect;return 0;});}},
         {"parent",[](lua_State* L){return protect(L,[&]{
             auto* runtime=runtimeOf(L);auto id=entityArg(L,1);runtime->entity(id);
             if(auto parent=runtime->scene.parent(id)) pushEntity(L,*parent); else lua_pushnil(L);
@@ -209,6 +219,30 @@ int bindRuntime(lua_State* L) {
             lua_createtable(L,int(ids.size()),0);
             for(size_t i=0;i<ids.size();++i) {pushEntity(L,ids[i]);lua_rawseti(L,-2,lua_Integer(i+1));}
             return 1;});}},
+        {"effect",[](lua_State* L){return protect(L,[&]{
+            // game.effect(id, { position = vec3, entity = Entity|key, yaw = n, seed = n })
+            auto* runtime=runtimeOf(L);
+            auto effect=lua::string(L,1,"effect");
+            if(!runtime->scene.effects().contains(effect)) throw std::invalid_argument("unknown effect "+effect);
+            glm::vec3 position{};float yaw=0;std::string entity;uint32_t seed=0;
+            if(!lua_isnoneornil(L,2)) {
+                if(lua_type(L,2)!=LUA_TTABLE) throw std::invalid_argument("effect() options must be a table");
+                if(auto v=lua::fieldVec3(L,2,"position")) position=*v;
+                yaw=lua::fieldNumber(L,2,"yaw",0);
+                seed=uint32_t(std::max(0.0f,lua::fieldNumber(L,2,"seed",0)));
+                int type=lua::pushField(L,2,"entity");
+                if(type==LUA_TSTRING) entity=lua_tostring(L,-1);
+                else if(type!=LUA_TNIL) {
+                    auto* id=static_cast<EntityId*>(luaL_testudata(L,-1,EntityType));
+                    if(!id) {lua_pop(L,1);throw std::invalid_argument("entity must be an Entity or a key");}
+                    entity=runtime->entity(*id).key;
+                }
+                lua_pop(L,1);
+            }
+            if(!entity.empty() && !runtime->scene.get(runtime->scene.find(entity))) throw std::invalid_argument("unknown entity "+entity);
+            if(!runtime->effects) throw std::runtime_error("effects are not available in this runtime");
+            runtime->effects(effect,position,yaw,entity,seed);
+            return 0;});}},
         {"spawn",[](lua_State* L){return protect(L,[&]{
             if(lua_type(L,1)!=LUA_TTABLE) throw std::invalid_argument("spawn() takes a table");
             Entity value;
@@ -219,6 +253,8 @@ int bindRuntime(lua_State* L) {
             if(auto v=lua::fieldVec3(L,1,"scale")) value.transform.scale=*v;
             value.transform.yaw=lua::fieldNumber(L,1,"yaw",0);
             value.scriptId=lua::fieldString(L,1,"script","");
+            value.effectId=lua::fieldString(L,1,"effect","");
+            if(!value.effectId.empty() && !runtimeOf(L)->scene.effects().contains(value.effectId)) throw std::invalid_argument("unknown effect "+value.effectId);
             lua::pushField(L,1,"properties");
             {struct Pop { lua_State* L; ~Pop() {lua_pop(L,1);} } pop{L};value.properties=readProperties(L,-1);}
             pushEntity(L,runtimeOf(L)->scene.create(std::move(value)));
@@ -260,6 +296,7 @@ void ScriptRuntime::update(float dt,const ScriptGameState& state) {
 void ScriptRuntime::collected(EntityId id) {
     for(size_t i=0;i<impl->instances.size();++i) if(impl->instances[i].id==id) impl->call(impl->instances[i],"collected");
 }
+void ScriptRuntime::setEffectPlayer(EffectPlayer player) {impl->effects=std::move(player);}
 const std::string& ScriptRuntime::message() const {return impl->message;}
 size_t ScriptRuntime::instanceCount() const {return impl->instances.size();}
 size_t ScriptRuntime::failureCount() const {return impl->failures;}

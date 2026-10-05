@@ -65,16 +65,19 @@ void EditorLayer::drawViewport(const GuiFrame& frame) {
             createEntity(meshId,position);
         }
         // Materials and scripts land on the entity under the cursor (outlined while hovering).
-        for(const char* type:{"SWAN_MATERIAL","SWAN_SCRIPT"}) {
+        for(const char* type:{"SWAN_MATERIAL","SWAN_SCRIPT","SWAN_EFFECT"}) {
             const auto* hover=ImGui::AcceptDragDropPayload(type,ImGuiDragDropFlags_AcceptBeforeDelivery|ImGuiDragDropFlags_AcceptNoDrawDefaultRect);
             if(!hover) continue;
-            auto key=pickEntity(scene,camera.camera(),local,{size.x,size.y});
+            const auto& shown=displayedScene();
+            auto key=pickEntity(shown,camera.camera(),local,{size.x,size.y});
             if(key.empty()) continue;
             auto vp=camera.camera().viewProjection(size.x/size.y);
-            drawBounds(ImGui::GetWindowDrawList(),worldBounds(scene,scene.find(key)),vp,origin,size,theme::Warning,2);
+            drawBounds(ImGui::GetWindowDrawList(),worldBounds(shown,shown.find(key)),vp,origin,size,theme::Warning,2);
             if(!hover->IsDelivery()) continue;
             std::string id(static_cast<const char*>(hover->Data));
-            if(std::string_view(type)=="SWAN_MATERIAL") assignMaterial(key,id); else assignScript(key,id);
+            if(std::string_view(type)=="SWAN_MATERIAL") assignMaterial(key,id);
+            else if(std::string_view(type)=="SWAN_SCRIPT") assignScript(key,id);
+            else attachEffect(key,id);
             break;
         }
         ImGui::EndDragDropTarget();
@@ -124,7 +127,7 @@ void EditorLayer::navigateViewport(bool hovered,ImVec2 origin,ImVec2 size,float 
         selectArmed=false;
         bool still=glm::length(glm::vec2(io.MousePos.x,io.MousePos.y)-pressPosition)<5;
         if(still && !pressOverGizmo && !gizmoActive) {
-            auto key=pickEntity(document.document().scene,camera.camera(),{io.MousePos.x-origin.x,io.MousePos.y-origin.y},{size.x,size.y});
+            auto key=pickEntity(displayedScene(),camera.camera(),{io.MousePos.x-origin.x,io.MousePos.y-origin.y},{size.x,size.y});
             if(attempt([&]{document.select(key);}) && !key.empty()) scrollToKey=key;
         }
     }
@@ -148,7 +151,8 @@ void EditorLayer::drawGizmo(ImVec2 origin,ImVec2 size) {
     }
     const auto* entity=selectedEntity();
     if(gizmo==Gizmo::Select || !entity) {gizmoActive=false;return;}
-    const auto& scene=document.document().scene;
+    // The gizmo sits where the viewport shows the entity (its timeline pose while animated).
+    const auto& scene=displayedScene();
     auto id=scene.find(entity->key);
     auto world=scene.worldTransform(id);
     auto model=transformMatrix(world);
@@ -180,21 +184,27 @@ void EditorLayer::drawGizmo(ImVec2 origin,ImVec2 size) {
             result.scale=world.scale*ratio[axis];
         } else result.scale=next.scale;
     }
-    auto local=entity->transform;
+    auto local=scene.get(id)->transform;
     auto parent=scene.parent(id);
     auto converted=parent?relativeTransform(scene.worldTransform(*parent),result):result;
     // Copy only the manipulated component so untouched values stay bit-exact.
     if(gizmo==Gizmo::Translate) local.position=converted.position;
     else if(gizmo==Gizmo::Rotate) local.yaw=converted.yaw;
     else local.scale=converted.scale;
-    try {document.showPreview(SetTransform{entity->key,local},verb+(entity->name.empty()?entity->key:entity->name));}
+    auto display=entity->name.empty()?entity->key:entity->name;
+    try {
+        if(autoKey) {
+            auto property=gizmo==Gizmo::Translate?TrackProperty::Position:gizmo==Gizmo::Rotate?TrackProperty::Yaw:TrackProperty::Scale;
+            if(auto timeline=keyedTimeline(entity->key,local,property)) document.showPreview(SetTimeline{*timeline},"Key "+std::string(propertyName(property))+" of "+display);
+        } else document.showPreview(SetTransform{entity->key,local},verb+display);
+    }
     catch(const std::exception& error) {if(!gizmoFailed) notify(Level::Warning,error.what());gizmoFailed=true;}
 }
 void EditorLayer::drawViewportOverlay(ImVec2 origin,ImVec2 size,const GuiFrame& frame) {
     auto* draw=ImGui::GetWindowDrawList();
     ImVec2 max{origin.x+size.x,origin.y+size.y};
     draw->PushClipRect(origin,max,true);
-    const auto& scene=document.document().scene;
+    const auto& scene=displayedScene();
     if(!play) {
         // Selection outline (drawn beneath the gizmo, which renders in its own pass).
         auto id=scene.find(document.selection());
@@ -213,6 +223,14 @@ void EditorLayer::drawViewportOverlay(ImVec2 origin,ImVec2 size,const GuiFrame& 
     else if(navigation==Navigation::Pan) info=std::string(icon::Move)+"  Pan";
     else if(gizmo!=Gizmo::Select) info=std::string(gizmo==Gizmo::Translate?icon::Move:gizmo==Gizmo::Rotate?icon::Rotate:icon::Scale)+(gizmo==Gizmo::Translate?"  Move":gizmo==Gizmo::Rotate?"  Rotate":"  Scale")+(gizmoLocal?"  \xc2\xb7  Local":"  \xc2\xb7  World")+(settings.snap?"  \xc2\xb7  Snap":"");
     if(!info.empty()) overlayChip(draw,{origin.x+pad+6,origin.y+pad},info,play?theme::Play:IM_COL32(220,222,230,255));
+    // Bottom-right: effect preview time and particles.
+    if(!play && (fxPlaying || fxTime>0)) {
+        char text[128];
+        std::snprintf(text,sizeof text,"%s  %.2f s  \xc2\xb7  %zu particles%s%s",fxPlaying?icon::Play:icon::Pause,fxTime,
+                      fxShowing()?fxPreview->effects().particleCount():size_t(0),fxShotCamera?"  \xc2\xb7  shot camera":"",autoKey?"  \xc2\xb7  AUTO KEY":"");
+        float width=ImGui::CalcTextSize(text).x;
+        overlayChip(draw,{max.x-pad-width-6,max.y-pad-ImGui::GetTextLineHeight()},text,autoKey?IM_COL32(255,150,150,255):IM_COL32(236,190,110,255));
+    }
     // Bottom-left: statistics.
     if(settings.showStats) {
         char text[128];

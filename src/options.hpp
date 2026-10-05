@@ -4,6 +4,7 @@ namespace swan {
 struct Options {
     bool validation=false;
     bool editor=false;
+    bool headless=false; // No window or swapchain: VulkanRenderer::renderImage() only.
     bool culling=true;
     bool verifyMeshUploads=false;
     bool x11=false;

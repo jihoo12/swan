@@ -1,0 +1,478 @@
+{
+  "effects": {
+    "campfire": {
+      "emitters": [
+        {
+          "color_over_life": [
+            [0.0, [1.0, 0.85, 0.45, 0.0]],
+            [0.1, [1.0, 0.55, 0.12, 0.9]],
+            [0.6, [0.9, 0.22, 0.04, 0.6]],
+            [1.0, [0.4, 0.05, 0.01, 0.0]]
+          ],
+          "duration": 1.0,
+          "intensity": 1.6,
+          "lifetime": [0.5, 0.9],
+          "loop": true,
+          "name": "flames",
+          "noise": 1.4,
+          "noise_frequency": 2.0,
+          "radius": 0.3,
+          "rate": 55.0,
+          "shape": "disc",
+          "size": [0.22, 0.4],
+          "size_over_life": [[0.0, 0.5], [0.25, 1.0], [1.0, 0.15, "in"]],
+          "speed": [1.0, 1.7],
+          "spread": 8.0,
+          "stretch": 0.35
+        },
+        {
+          "color": [1.0, 0.7, 0.3, 0.35],
+          "duration": 1.0,
+          "intensity": 1.2,
+          "lifetime": 0.4,
+          "loop": true,
+          "name": "core",
+          "offset": [0.0, 0.15, 0.0],
+          "radius": 0.12,
+          "rate": 12.0,
+          "shape": "disc",
+          "size": 0.5,
+          "speed": 0.5
+        },
+        {
+          "color": [1.0, 0.55, 0.15],
+          "color_over_life": [
+            [0.0, [1.0, 1.0, 1.0]],
+            [1.0, [1.0, 0.4, 0.2, 0.0]]
+          ],
+          "drag": 0.5,
+          "duration": 1.0,
+          "intensity": 8.0,
+          "lifetime": [1.2, 2.4],
+          "loop": true,
+          "name": "embers",
+          "noise": 2.5,
+          "radius": 0.3,
+          "rate": 18.0,
+          "shape": "disc",
+          "size": 0.05,
+          "speed": [1.8, 3.2],
+          "spread": 20.0,
+          "sprite": "spark",
+          "stretch": 0.12
+        },
+        {
+          "blend": "alpha",
+          "color": [0.16, 0.15, 0.15],
+          "color_over_life": [
+            [0.0, [1.0, 1.0, 1.0, 0.0]],
+            [0.2, [1.0, 1.0, 1.0, 0.55]],
+            [1.0, [1.0, 1.0, 1.0, 0.0]]
+          ],
+          "duration": 1.0,
+          "lifetime": [2.5, 3.5],
+          "loop": true,
+          "name": "smoke",
+          "noise": 0.4,
+          "offset": [0.0, 1.1, 0.0],
+          "radius": 0.2,
+          "rate": 9.0,
+          "shape": "disc",
+          "size": [0.6, 0.9],
+          "size_over_life": [[0.0, 0.6], [1.0, 2.6]],
+          "speed": [0.5, 0.8],
+          "spin": [-30.0, 30.0],
+          "spread": 8.0,
+          "sprite": "smoke"
+        }
+      ]
+    },
+    "explosion": {
+      "emitters": [
+        {
+          "bursts": [
+            {
+              "count": 1,
+              "time": 0.0
+            }
+          ],
+          "color_over_life": [
+            [0.0, [1.0, 0.9, 0.7]],
+            [1.0, [1.0, 0.5, 0.2, 0.0]]
+          ],
+          "duration": 0.1,
+          "intensity": 6.0,
+          "lifetime": 0.2,
+          "name": "flash",
+          "size": 2.4,
+          "size_over_life": [[0.0, 0.5], [1.0, 1.4, "out"]],
+          "speed": 0.0
+        },
+        {
+          "bursts": [
+            {
+              "count": 220,
+              "time": 0.0
+            }
+          ],
+          "color_over_life": [
+            [0.0, [1.0, 0.9, 0.6]],
+            [0.5, [1.0, 0.5, 0.15]],
+            [1.0, [0.8, 0.2, 0.05, 0.0]]
+          ],
+          "drag": 1.2,
+          "duration": 0.1,
+          "gravity": [0.0, -6.0, 0.0],
+          "intensity": 7.0,
+          "lifetime": [0.6, 1.4],
+          "name": "sparks",
+          "radial": true,
+          "radius": 0.1,
+          "shape": "sphere",
+          "size": [0.04, 0.08],
+          "speed": [4.0, 9.0],
+          "spread": 20.0,
+          "sprite": "spark",
+          "stretch": 0.08
+        },
+        {
+          "bursts": [
+            {
+              "count": 1,
+              "time": 0.0
+            }
+          ],
+          "color_over_life": [
+            [0.0, [0.6, 0.8, 1.0, 0.9]],
+            [1.0, [0.3, 0.5, 1.0, 0.0]]
+          ],
+          "duration": 0.1,
+          "intensity": 3.0,
+          "lifetime": 0.5,
+          "name": "shockwave",
+          "size": 1.0,
+          "size_over_life": [[0.0, 0.2], [1.0, 6.0, "out"]],
+          "speed": 0.0,
+          "sprite": "ring"
+        },
+        {
+          "blend": "alpha",
+          "bursts": [
+            {
+              "count": 24,
+              "time": 0.0
+            }
+          ],
+          "color": [0.12, 0.11, 0.11],
+          "color_over_life": [
+            [0.0, [1.0, 1.0, 1.0, 0.8]],
+            [1.0, [1.0, 1.0, 1.0, 0.0]]
+          ],
+          "drag": 1.5,
+          "duration": 0.1,
+          "gravity": [0.0, 0.4, 0.0],
+          "lifetime": [1.5, 2.5],
+          "name": "smoke",
+          "radial": true,
+          "radius": 0.3,
+          "shape": "sphere",
+          "size": [0.8, 1.3],
+          "size_over_life": [[0.0, 0.5], [1.0, 2.0]],
+          "speed": [0.6, 1.4],
+          "spin": [-45.0, 45.0],
+          "sprite": "smoke"
+        }
+      ]
+    },
+    "orb-trail": {
+      "emitters": [
+        {
+          "color": [0.55, 0.8, 1.0],
+          "drag": 1.0,
+          "duration": 1.0,
+          "intensity": 4.0,
+          "lifetime": [0.4, 0.8],
+          "loop": true,
+          "name": "trail",
+          "radius": 0.12,
+          "rate": 90.0,
+          "shape": "sphere",
+          "size": [0.08, 0.16],
+          "size_over_life": [[0.0, 1.0], [1.0, 0.0]],
+          "speed": [0.1, 0.4],
+          "spread": 180.0
+        },
+        {
+          "color": [0.4, 0.7, 1.0, 0.5],
+          "duration": 1.0,
+          "intensity": 2.0,
+          "lifetime": 0.25,
+          "loop": true,
+          "name": "halo",
+          "rate": 30.0,
+          "size": 0.9,
+          "space": "local",
+          "speed": 0.0
+        }
+      ]
+    },
+    "portal": {
+      "emitters": [
+        {
+          "color_over_life": [
+            [0.0, [0.5, 0.3, 1.0, 0.0]],
+            [0.2, [0.6, 0.4, 1.0]],
+            [1.0, [0.2, 0.6, 1.0, 0.0]]
+          ],
+          "direction": [0.0, 0.0, 1.0],
+          "duration": 1.0,
+          "intensity": 5.0,
+          "lifetime": [0.8, 1.2],
+          "loop": true,
+          "name": "ring",
+          "orbit": 2.5,
+          "radius": 1.1,
+          "rate": 200.0,
+          "shape": "ring",
+          "size": [0.05, 0.1],
+          "speed": [0.05, 0.2],
+          "spread": 180.0
+        },
+        {
+          "color": [0.35, 0.2, 0.9, 0.35],
+          "direction": [0.0, 0.0, 1.0],
+          "duration": 1.0,
+          "intensity": 2.0,
+          "lifetime": 1.4,
+          "loop": true,
+          "name": "swirl",
+          "noise": 0.6,
+          "orbit": -1.5,
+          "radius": 1.0,
+          "rate": 60.0,
+          "shape": "disc",
+          "size": [0.25, 0.45],
+          "size_over_life": [[0.0, 0.0], [0.3, 1.0], [1.0, 0.0]],
+          "speed": [0.2, 0.5]
+        }
+      ]
+    }
+  },
+  "entities": [
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "ground",
+      "material": "ground",
+      "mesh": "builtin:cube",
+      "name": "Ground",
+      "solid": false,
+      "transform": {
+        "position": [0.0, -0.5, 0.0],
+        "scale": [30.0, 1.0, 30.0],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "log-1",
+      "material": "wood",
+      "mesh": "builtin:cube",
+      "name": "Log 1",
+      "solid": false,
+      "transform": {
+        "position": [0.0, 0.08, 0.0],
+        "scale": [1.1, 0.16, 0.18],
+        "yaw": 0.3
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "log-2",
+      "material": "wood",
+      "mesh": "builtin:cube",
+      "name": "Log 2",
+      "solid": false,
+      "transform": {
+        "position": [0.0, 0.08, 0.0],
+        "scale": [1.1, 0.16, 0.18],
+        "yaw": 1.9
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "log-3",
+      "material": "wood",
+      "mesh": "builtin:cube",
+      "name": "Log 3",
+      "solid": false,
+      "transform": {
+        "position": [0.0, 0.08, 0.0],
+        "scale": [1.1, 0.16, 0.18],
+        "yaw": 3.4
+      }
+    },
+    {
+      "collectible": false,
+      "goal": false,
+      "id": "portal-base",
+      "material": "stone",
+      "mesh": "builtin:cube",
+      "name": "Portal base",
+      "solid": false,
+      "transform": {
+        "position": [-4.0, 0.1, -3.0],
+        "scale": [2.8, 0.2, 0.8],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "effect": "campfire",
+      "goal": false,
+      "id": "campfire",
+      "material": "wood",
+      "mesh": "builtin:cube",
+      "name": "Campfire",
+      "solid": false,
+      "transform": {
+        "position": [0.0, 0.12, 0.0],
+        "scale": [0.1, 0.1, 0.1],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "effect": "portal",
+      "goal": false,
+      "id": "portal",
+      "material": "stone",
+      "mesh": "builtin:cube",
+      "name": "Portal",
+      "solid": false,
+      "transform": {
+        "position": [-4.0, 1.35, -3.0],
+        "scale": [0.1, 0.1, 0.1],
+        "yaw": 0.0
+      }
+    },
+    {
+      "collectible": false,
+      "effect": "orb-trail",
+      "goal": false,
+      "id": "orb",
+      "material": "orb",
+      "mesh": "builtin:cube",
+      "name": "Orb",
+      "solid": false,
+      "transform": {
+        "position": [-4.0, 1.2, -3.0],
+        "scale": [0.18, 0.18, 0.18],
+        "yaw": 0.0
+      }
+    }
+  ],
+  "environment": {
+    "ambient": 0.12,
+    "background": [0.012, 0.014, 0.025],
+    "bloom": 0.9,
+    "bloom_threshold": 0.9,
+    "exposure": 1.1,
+    "fog": 0.002,
+    "local_light": 0.0,
+    "sun": 0.25,
+    "tonemap": "aces"
+  },
+  "format": "swan-scene",
+  "materials": {
+    "default": {
+      "color": [1.0, 1.0, 1.0],
+      "emission": 0.0,
+      "texture": "builtin:white",
+      "uv_scale": [1.0, 1.0]
+    },
+    "ground": {
+      "color": [0.12, 0.11, 0.1],
+      "emission": 0.0,
+      "texture": "builtin:white",
+      "uv_scale": [1.0, 1.0]
+    },
+    "orb": {
+      "color": [0.6, 0.8, 1.0],
+      "emission": 4.0,
+      "texture": "builtin:white",
+      "uv_scale": [1.0, 1.0]
+    },
+    "stone": {
+      "color": [0.35, 0.36, 0.4],
+      "emission": 0.0,
+      "texture": "builtin:white",
+      "uv_scale": [1.0, 1.0]
+    },
+    "wood": {
+      "color": [0.25, 0.14, 0.08],
+      "emission": 0.0,
+      "texture": "builtin:white",
+      "uv_scale": [1.0, 1.0]
+    }
+  },
+  "meshes": {},
+  "spawn": [0.0, 0.2, 14.0],
+  "textures": {},
+  "timeline": {
+    "camera": {
+      "fov": [[0.0, 50.0]],
+      "position": [
+        [0.0, [3.0, 2.2, 8.0], "smooth"],
+        [6.0, [6.5, 3.2, 5.5]]
+      ],
+      "target": [
+        [0.0, [-1.5, 1.2, -1.0], "smooth"],
+        [3.4, [0.0, 1.8, 0.0], "smooth"],
+        [6.0, [0.0, 1.2, 0.0]]
+      ]
+    },
+    "duration": 6.0,
+    "events": [
+      {
+        "effect": "explosion",
+        "position": [0.0, 2.4, 0.0],
+        "time": 3.4
+      }
+    ],
+    "loop": true,
+    "tracks": [
+      {
+        "entity": "orb",
+        "keys": [
+          [0.0, [-4.0, 0.3, -3.0], "out"],
+          [1.2, [-4.0, 2.2, -3.0], "smooth"],
+          [2.6, [-1.2, 3.2, -1.0], "smooth"],
+          [3.4, [0.0, 2.4, 0.0]],
+          [3.41, [0.0, -3.0, 0.0], "step"],
+          [6.0, [0.0, -3.0, 0.0]]
+        ],
+        "property": "position"
+      },
+      {
+        "entity": "orb",
+        "keys": [[0.0, 1.0], [3.39, 1.0, "step"], [3.4, 0.0]],
+        "property": "emit"
+      },
+      {
+        "environment": true,
+        "keys": [[0.0, 1.1], [3.4, 1.1], [3.45, 1.7, "out"], [4.2, 1.1]],
+        "property": "exposure"
+      },
+      {
+        "keys": [[0.0, 2.0], [3.2, 8.0]],
+        "material": "orb",
+        "property": "emission"
+      }
+    ]
+  },
+  "version": 7
+}

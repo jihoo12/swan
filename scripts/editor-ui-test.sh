@@ -12,7 +12,12 @@ cleanup() {
     rm -rf "$work"
 }
 trap cleanup EXIT
-fail() { echo "FAIL: $*" >&2; echo "--- editor log" >&2; tail -40 "$work/swan.log" >&2 || true; exit 1; }
+fail() {
+    echo "FAIL: $*" >&2
+    echo "--- editor messages (probe)" >&2; python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['values'].get('log','')); print({k: v for k, v in d['values'].items() if k != 'log'})" "$work/probe.json" >&2 || true
+    echo "--- editor log" >&2; tail -40 "$work/swan.log" >&2 || true
+    exit 1
+}
 Xvfb -displayfd 3 -screen 0 1280x800x24 -nolisten tcp 3>"$work/display" >"$work/xvfb.log" 2>&1 &
 xpid=$!
 for ((i=0;i<100;i++)); do [[ -s "$work/display" ]] && break; sleep .05; done
@@ -46,7 +51,19 @@ wait_contains() { # wait_contains VALUE-NAME TEXT
     fail "$1 does not contain '$2': $(probe value "$1")"
 }
 wait_widget() { for ((i=0;i<100;i++)); do probe has "$1" 2>/dev/null && return; sleep .05; done; fail "widget $1 never appeared"; }
-input() { xdotool "$@" >>"$work/input.log" 2>&1; sleep .2; }
+input() {
+    # Hold modifiers like a person: xdotool's instant chord can release Ctrl in the same GUI frame
+    # as the key press, and ImGui then sees the key without its modifier.
+    if [[ "$1" == key && "$2" == *+* ]]; then
+        local -a parts; IFS=+ read -ra parts <<<"$2"
+        local last=${parts[-1]} modifier
+        for modifier in "${parts[@]:0:${#parts[@]}-1}"; do xdotool keydown "$modifier"; done
+        sleep .05; xdotool key "$last"; sleep .05
+        for modifier in "${parts[@]:0:${#parts[@]}-1}"; do xdotool keyup "$modifier"; done
+        sleep .2; return
+    fi
+    xdotool "$@" >>"$work/input.log" 2>&1; sleep .2
+}
 # Press and release like a person: an instantaneous X11 click can land within one GUI frame.
 press() { input mousemove "$1" "$2"; xdotool mousedown 1; sleep .08; xdotool mouseup 1; sleep .2; }
 click() { wait_widget "$1"; local xy; xy=$(probe center "$1") || fail "$xy"; press $xy; }
@@ -214,6 +231,59 @@ wait "$spid" || fail "editor exited with an error"
 spid=
 grep -q 'Validation errors: 0' "$work/swan.log" || fail "Vulkan validation errors in the scripting session"
 echo "Lua console transaction, script persistence, scripted Play: ok"
+
+# Effects and timeline: create an effect on the selection, preview it, edit an emitter, and key a
+# transform with Auto Key; every step is one undo step and saves as scene version 7.
+"$binary" editor assets/scenes/playground.swan.json --x11 --validation --save-scene "$saved" >"$work/swan.log" 2>&1 &
+spid=$!
+wait_widget hierarchy/pedestal
+click hierarchy/pedestal
+wait_for selection pedestal
+# View toggles hide a shown panel; showing one again brings its tab to the front.
+palette "view assets"
+palette "view assets"
+click assets/tab/Effects
+click assets/new-effect
+wait_contains undo "Create effect effect"
+save
+check "e['pedestal']['effect'] == 'effect' and scene['effects']['effect']['emitters'][0]['rate'] == 40"
+wait_for fx_playing true
+for ((i=0;i<100;i++)); do (( $(probe value fx_particles) > 0 )) && break; sleep .05; done
+(( $(probe value fx_particles) > 0 )) || fail "the effect preview shows no particles"
+input key space
+wait_for fx_playing false
+click effect/0/rate
+input key ctrl+a
+input type --clearmodifiers 120
+input key Return
+wait_for undo "Edit effect effect"
+save
+check "scene['effects']['effect']['emitters'][0]['rate'] == 120"
+palette "view timeline"
+palette "view timeline"
+click timeline/rewind
+wait_for fx_time 0.00
+click timeline/autokey
+click timeline/ruler
+[[ "$(probe value fx_time)" != "0.00" ]] || fail "clicking the timeline ruler did not move the playhead"
+palette "view inspector"
+palette "view inspector"
+click inspector/position/x
+input key ctrl+a
+input type --clearmodifiers 4
+input key Return
+wait_contains undo "Key position of"
+save
+check "[(t['entity'], t['property'], len(t['keys'])) for t in scene['timeline']['tracks']] == [('pedestal', 'position', 1)]"
+check "abs(scene['timeline']['tracks'][0]['keys'][0][1][0] - 4) < 1e-6 and scene['timeline']['tracks'][0]['keys'][0][0] > 0"
+input key ctrl+z
+save
+check "'timeline' not in scene"
+input key ctrl+q
+wait "$spid" || fail "editor exited with an error"
+spid=
+grep -q 'Validation errors: 0' "$work/swan.log" || fail "Vulkan validation errors in the effects session"
+echo "effects panel, preview, emitter edit, Auto Key timeline keys: ok"
 
 # A fresh editor session needs no scene or save-path arguments.
 "$binary" editor --x11 --validation --frames 10 >"$work/new-editor.log" 2>&1

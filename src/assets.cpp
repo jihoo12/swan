@@ -82,6 +82,17 @@ const ScriptAsset& ScriptAssets::get(const std::string& id) const {
     if(found==scripts.end()) throw std::invalid_argument("Unknown script asset: "+id);
     return found->second;
 }
+void EffectAssets::set(std::string id,EffectDef effect) {
+    if(id.empty() || id.size()>256 || id.starts_with("builtin:")) throw std::invalid_argument("Invalid effect asset ID: "+id);
+    if(!effects.contains(id) && effects.size()>=maxEffects) throw std::invalid_argument("At most 256 effects are supported");
+    try {validateEffect(effect);} catch(const std::exception& e) {throw std::invalid_argument("Effect "+id+": "+e.what());}
+    effects.insert_or_assign(std::move(id),std::make_shared<const EffectDef>(std::move(effect)));
+}
+const SharedEffect& EffectAssets::get(const std::string& id) const {
+    auto found=effects.find(id);
+    if(found==effects.end()) throw std::invalid_argument("Unknown effect asset: "+id);
+    return found->second;
+}
 MaterialAssets::MaterialAssets() { set("default",{}); }
 void MaterialAssets::set(std::string id,Material material) {
     if(id.empty() || id.size()>256) throw std::invalid_argument("Material ID must contain 1..256 characters");

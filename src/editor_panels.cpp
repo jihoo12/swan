@@ -54,6 +54,8 @@ void EditorLayer::drawAssets() {
     std::vector<std::pair<std::string,Material>> materials(scene.assets().entries().begin(),scene.assets().entries().end());
     std::vector<std::pair<std::string,std::string>> scripts;
     for(const auto& [id,script]:scene.scripts().entries()) scripts.push_back({id,script.source.empty()?"In memory":script.source.string()});
+    std::vector<std::pair<std::string,size_t>> effects;
+    for(const auto& [id,effect]:scene.effects().entries()) effects.push_back({id,effect->emitters.size()});
     std::vector<std::pair<std::string,std::string>> textures;
     for(const auto& [id,texture]:scene.textures().entries()) textures.push_back({id,texture.source.empty()?"Built-in":texture.source.filename().string()});
     auto usage=[&](auto predicate){size_t n=0;for(auto id:scene.entities()) n+=predicate(*scene.get(id));return n;};
@@ -156,6 +158,35 @@ void EditorLayer::drawAssets() {
                     ImGui::TextUnformatted(id.c_str());
                     ImGui::TextColored(toVec4(theme::TextDim),"%s",source.c_str());
                     ImGui::TextColored(toVec4(theme::TextDim),"Used by %zu  \xc2\xb7  drag onto an entity or double-click to attach",usage([&](const Entity& e){return e.scriptId==id;}));
+                    ImGui::EndTooltip();
+                }
+                ImGui::PopID();
+            });
+            ImGui::EndTabItem();
+        }
+        if(tab(icon::Flame,"Effects",effects.size())) {
+            ImGui::BeginDisabled(!editable());
+            if(ImGui::Button((std::string(icon::Plus)+"  New Effect").c_str())) action=[this]{newEffect();};
+            probe::item("assets/new-effect");
+            ImGui::EndDisabled();
+            ImGui::SameLine();ImGui::TextColored(toVec4(theme::TextDim),"Click to edit, drag onto an entity or double-click to attach. Space previews.");
+            std::vector<size_t> shown;
+            for(size_t i=0;i<effects.size();++i) if(visible(effects[i].first)) shown.push_back(i);
+            grid(shown.size(),[&](size_t index){
+                const auto& [id,emitters]=effects[shown[index]];
+                ImGui::PushID(id.c_str());
+                bool open=assetTile(id,icon::Flame,IM_COL32(255,150,80,255),84*lastScale,id==selectedEffect || (selected && selected->effectId==id),nullptr);
+                probe::item("assets/effect/"+id);
+                if(ImGui::IsItemClicked()) {selectedEffect=id;showEffectEditor=true;focusWindow="###EffectEditor";}
+                if(open && editable() && selected) action=[this,key=selected->key,id]{attachEffect(key,id);};
+                if(editable() && ImGui::BeginDragDropSource()) {
+                    ImGui::SetDragDropPayload("SWAN_EFFECT",id.c_str(),id.size()+1);
+                    ImGui::Text("%s  Attach %s",icon::Flame,id.c_str());
+                    ImGui::EndDragDropSource();
+                }
+                if(ImGui::BeginItemTooltip()) {
+                    ImGui::TextUnformatted(id.c_str());
+                    ImGui::TextColored(toVec4(theme::TextDim),"%zu emitter(s)  \xc2\xb7  used by %zu",emitters,usage([&](const Entity& e){return e.effectId==id;}));
                     ImGui::EndTooltip();
                 }
                 ImGui::PopID();

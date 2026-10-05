@@ -22,6 +22,7 @@ constexpr const char* ViewportWindow="###Viewport";
 constexpr const char* AssetsWindow="###Assets";
 constexpr const char* ConsoleWindow="###Console";
 constexpr const char* HistoryWindow="###History";
+constexpr const char* TimelineWindow="###Timeline";
 // Segmented toolbar button: accent background while active.
 bool toolButton(const char* glyph,bool active,const char* tooltip,const char* probeId=nullptr) {
     if(active) {
@@ -67,6 +68,7 @@ void EditorLayer::drawGui(const GuiFrame& frame) {
     probe::beginFrame();
     ImGuizmo::BeginFrame();
     camera.update(frame.deltaTime);
+    updateFxPreview(frame.deltaTime);
     if(play) for(auto& line:play->takeMessages())
         log(line.starts_with("Script ")?Level::Error:Level::Info,line.starts_with("Script ")?line:"[script] "+line);
     if(playCaptured && ImGui::IsKeyPressed(ImGuiKey_Escape,false)) playCaptured=false;
@@ -81,6 +83,9 @@ void EditorLayer::drawGui(const GuiFrame& frame) {
     if(showAssets) drawAssets();
     if(showConsole) drawConsole();
     if(showHistory) drawHistory();
+    if(showTimeline) drawTimeline();
+    if(showEffectEditor) drawEffectEditor();
+    if(!focusWindow.empty()) {ImGui::SetWindowFocus(focusWindow.c_str());focusWindow.clear();}
     palette.draw(actions,paletteItems());
     fileDialog.draw(settings.recentScenes);
     drawModals();
@@ -93,6 +98,12 @@ void EditorLayer::drawGui(const GuiFrame& frame) {
     probe::value("modified",document.modified()?"true":"false");
     probe::value("mode",play?"play":"authoring");
     probe::value("undo",document.undoLabel());
+    {
+        char text[32];std::snprintf(text,sizeof text,"%.2f",fxTime);
+        probe::value("fx_time",text);
+        probe::value("fx_playing",fxPlaying?"true":"false");
+        probe::value("fx_particles",std::to_string(fxShowing()?fxPreview->effects().particleCount():0));
+    }
     if(probe::enabled()) {
         std::string recent;
         for(size_t i=logs.size()>8?logs.size()-8:0;i<logs.size();++i) recent+=logs[i].text+"\n";
@@ -140,11 +151,14 @@ void EditorLayer::registerActions() {
         for(auto id:scene.entities()) for(auto corner:worldBounds(scene,id)) {low=glm::min(low,corner);high=glm::max(high,corner);}
         if(scene.size()) camera.frame((low+high)*0.5f,glm::length(high-low)*0.5f);
     },[this]{return !play && document.document().scene.size()>0;}});
-    add({"view.hierarchy","Hierarchy",icon::Tree,"View",0,0,[this]{showHierarchy=!showHierarchy;},{},[this]{return showHierarchy;}});
-    add({"view.inspector","Inspector",icon::Sliders,"View",0,0,[this]{showInspector=!showInspector;},{},[this]{return showInspector;}});
-    add({"view.assets","Assets",icon::Package,"View",0,0,[this]{showAssets=!showAssets;},{},[this]{return showAssets;}});
-    add({"view.console","Console",icon::Terminal,"View",0,0,[this]{showConsole=!showConsole;},{},[this]{return showConsole;}});
-    add({"view.history","History",icon::History,"View",0,0,[this]{showHistory=!showHistory;},{},[this]{return showHistory;}});
+    add({"view.hierarchy","Hierarchy",icon::Tree,"View",0,0,[this]{showHierarchy=!showHierarchy;if(showHierarchy) focusWindow=HierarchyWindow;},{},[this]{return showHierarchy;}});
+    add({"view.inspector","Inspector",icon::Sliders,"View",0,0,[this]{showInspector=!showInspector;if(showInspector) focusWindow=InspectorWindow;},{},[this]{return showInspector;}});
+    add({"view.assets","Assets",icon::Package,"View",0,0,[this]{showAssets=!showAssets;if(showAssets) focusWindow=AssetsWindow;},{},[this]{return showAssets;}});
+    add({"view.console","Console",icon::Terminal,"View",0,0,[this]{showConsole=!showConsole;if(showConsole) focusWindow=ConsoleWindow;},{},[this]{return showConsole;}});
+    add({"view.history","History",icon::History,"View",0,0,[this]{showHistory=!showHistory;if(showHistory) focusWindow=HistoryWindow;},{},[this]{return showHistory;}});
+    // Showing a tabbed panel also brings it to the front.
+    add({"view.timeline","Timeline",icon::Film,"View",0,0,[this]{showTimeline=!showTimeline;if(showTimeline) focusWindow="###Timeline";},{},[this]{return showTimeline;}});
+    add({"view.effect","Effect Editor",icon::Flame,"View",0,0,[this]{showEffectEditor=!showEffectEditor;if(showEffectEditor) focusWindow="###EffectEditor";},{},[this]{return showEffectEditor;}});
     add({"view.stats","Viewport Statistics",icon::Gauge,"View",0,0,[this]{settings.showStats=!settings.showStats;},{},[this]{return settings.showStats;}});
     add({"view.grid","Ground Grid",icon::Grid,"View",0,0,[this]{settings.showGrid=!settings.showGrid;},{},[this]{return settings.showGrid;}});
     add({"view.zoom-in","Increase UI Size",icon::Plus,"View",ImGuiMod_Ctrl|ImGuiKey_Equal,0,[this]{settings.uiScale=std::min(2.0f,settings.uiScale+0.1f);}});
@@ -162,6 +176,19 @@ void EditorLayer::registerActions() {
     add({"script.new","New Script...",icon::FileCode,"Script",0,0,[this]{newScript();},editing});
     add({"script.import","Import Script...",icon::FileCode,"Script",0,0,[this]{importScript();},editing});
     add({"script.console","Lua Console",icon::Terminal,"Script",ImGuiMod_Ctrl|ImGuiKey_GraveAccent,0,[this]{showConsole=true;focusConsole=true;}});
+    // Timeline and effects. Space is free outside fly navigation (which uses it to rise).
+    auto timeline=[this]{return editable() && navigation==Navigation::None;};
+    add({"timeline.play","Play / Pause Effect Preview",icon::Play,"Timeline",ImGuiKey_Space,0,[this]{
+        auto length=document.document().scene.timeline().length();
+        if(!fxPlaying && length>0 && fxTime>=length-1e-6) fxTime=0;
+        fxPlaying=!fxPlaying;
+    },timeline,[this]{return fxPlaying;}});
+    add({"timeline.rewind","Rewind Effect Preview",icon::SkipBack,"Timeline",ImGuiMod_Shift|ImGuiKey_Space,0,[this]{fxPlaying=false;fxTime=0;},timeline});
+    add({"timeline.key","Key Selection Transform",icon::Diamond,"Timeline",ImGuiKey_I,0,[this]{keySelection({TrackProperty::Position,TrackProperty::Yaw,TrackProperty::Scale});},hasSelection});
+    add({"timeline.key-camera","Key Viewport Camera",icon::Camera,"Timeline",0,0,[this]{keyCamera();},editing});
+    add({"timeline.auto-key","Auto Key",icon::Diamond,"Timeline",0,0,[this]{autoKey=!autoKey;},editing,[this]{return autoKey;}});
+    add({"timeline.shot-camera","View Through Shot Camera",icon::Clapperboard,"Timeline",0,0,[this]{fxShotCamera=!fxShotCamera;},{},[this]{return fxShotCamera;}});
+    add({"effect.new","New Effect",icon::Flame,"Create",0,0,[this]{newEffect();},editing});
     // Play
     add({"play.toggle","Play / Stop",icon::Play,"Play",ImGuiKey_F5,ImGuiMod_Ctrl|ImGuiKey_P,[this]{togglePlay();}});
     // Help
@@ -222,6 +249,7 @@ void EditorLayer::drawMenuBar() {
     }
     if(ImGui::BeginMenu("Create")) {
         actions.menuItem("create.cube");
+        actions.menuItem("effect.new");
         ImGui::BeginDisabled(!editable());
         const auto& meshes=document.document().scene.meshes().entries();
         if(meshes.size()>1) ImGui::SeparatorText("Scene meshes");
@@ -236,10 +264,17 @@ void EditorLayer::drawMenuBar() {
         ImGui::EndMenu();
     }
     if(ImGui::BeginMenu("View")) {
-        for(const char* id:{"view.hierarchy","view.inspector","view.assets","view.console","view.history"}) actions.menuItem(id);
+        for(const char* id:{"view.hierarchy","view.inspector","view.assets","view.console","view.history","view.timeline","view.effect"}) actions.menuItem(id);
         ImGui::Separator();actions.menuItem("view.focus");actions.menuItem("view.frame-all");actions.menuItem("view.stats");actions.menuItem("view.grid");
         ImGui::Separator();actions.menuItem("view.zoom-in");actions.menuItem("view.zoom-out");actions.menuItem("view.zoom-reset");
         ImGui::Separator();actions.menuItem("view.reset-layout");
+        ImGui::EndMenu();
+    }
+    if(ImGui::BeginMenu("Timeline")) {
+        for(const char* id:{"timeline.play","timeline.rewind"}) actions.menuItem(id);
+        ImGui::Separator();
+        for(const char* id:{"timeline.key","timeline.key-camera","timeline.auto-key"}) actions.menuItem(id);
+        ImGui::Separator();actions.menuItem("timeline.shot-camera");
         ImGui::EndMenu();
     }
     if(ImGui::BeginMenu("Help")) {
@@ -363,11 +398,12 @@ void EditorLayer::drawDockspace() {
         ImGui::DockBuilderDockWindow(HistoryWindow,leftBottom);
         ImGui::DockBuilderDockWindow(InspectorWindow,right);
         ImGui::DockBuilderDockWindow(AssetsWindow,bottom);
+        ImGui::DockBuilderDockWindow(TimelineWindow,bottom);
         ImGui::DockBuilderDockWindow(ConsoleWindow,bottom);
         ImGui::DockBuilderDockWindow(ViewportWindow,center);
         if(auto* node=ImGui::DockBuilderGetNode(center)) node->LocalFlags|=ImGuiDockNodeFlags_HiddenTabBar;
         ImGui::DockBuilderFinish(id);
-        showHierarchy=showInspector=showAssets=showConsole=showHistory=true;
+        showHierarchy=showInspector=showAssets=showConsole=showHistory=showTimeline=true;
     }
     // Panels close from their tab (shown on hover) or the View menu; no per-node close/menu buttons.
     ImGui::DockSpaceOverViewport(id,viewport,ImGuiDockNodeFlags_NoCloseButton|ImGuiDockNodeFlags_NoWindowMenuButton);
@@ -518,6 +554,7 @@ void EditorLayer::togglePlay() {
         play.reset();document.stopPlay();playCaptured=false;
         notify(Level::Info,"Stopped; runtime changes discarded");return;
     }
+    fxPlaying=false;
     attempt([&]{
         document.startPlay();
         try {
@@ -699,9 +736,15 @@ void EditorLayer::fixedUpdate(float dt,const Input& input) {
 RenderFrame EditorLayer::renderFrame(float interpolation) const {
     RenderFrame frame;
     if(play) frame=play->renderFrame(interpolation);
-    else {
+    else if(fxShowing()) {
+        // The effect preview: particles plus timeline motion; the shot camera on request.
+        frame=fxPreview->frame(fxShotCamera?std::nullopt:std::optional<Camera>(camera.camera()));
+    } else {
         frame.camera=camera.camera();
-        const auto& scene=document.document().scene;
+        const auto& scene=displayedScene();
+        if(fxShotCamera)
+            if(auto shot=scene.timeline().cameraAt(scene.timeline().localTime(fxTime),camera.camera())) frame.camera=*shot;
+        frame.environment=scene.environment();
         for(auto id:scene.entities()) {
             const auto& entity=*scene.get(id);const auto& material=scene.assets().get(entity.materialId);
             frame.objects.push_back({scene.worldTransform(id),material,scene.meshes().get(entity.meshId).data,scene.textures().get(material.textureId).data});

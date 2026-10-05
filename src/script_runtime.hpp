@@ -24,6 +24,9 @@ public:
     ScriptRuntime& operator=(const ScriptRuntime&)=delete;
     // Starts behaviours of newly scripted entities, then calls update(self, dt) on each.
     void update(float dt,const ScriptGameState& state);
+    // Receives game.effect(id, {...}) calls: a world position, or an entity key plus offset.
+    using EffectPlayer=std::function<void(const std::string& effect,glm::vec3 position,float yaw,const std::string& entity,uint32_t seed)>;
+    void setEffectPlayer(EffectPlayer player);
     // Calls collected(self) on the entity's behaviour; call before destroying the entity.
     void collected(EntityId id);
     const std::string& message() const;   // Latest game.message() text.

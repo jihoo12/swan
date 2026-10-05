@@ -121,18 +121,23 @@ void VulkanRenderer::releaseTexture(GpuTexture& texture) {
 }
 void VulkanRenderer::synchronizeTextures(const RenderFrame& frame) {
     std::set<const TextureData*> needed;
+    std::vector<SharedTexture> used;
     for(const auto& object:frame.objects) {
         if(!object.texture) throw std::invalid_argument("Render object has no texture");
-        needed.insert(object.texture.get());
+        if(needed.insert(object.texture.get()).second) used.push_back(object.texture);
+    }
+    for(const auto& batch:frame.particles) {
+        if(!batch.texture) throw std::invalid_argument("Particle batch has no texture");
+        if(needed.insert(batch.texture.get()).second) used.push_back(batch.texture);
     }
     if(needed.size()>1024) throw std::invalid_argument("GPU texture cache exceeds 1024 resources");
     for(auto it=gpuTextures.begin();it!=gpuTextures.end();) {
         if(!needed.contains(it->first)) { releaseTexture(it->second); it=gpuTextures.erase(it); }
         else ++it;
     }
-    for(const auto& object:frame.objects) if(!gpuTextures.contains(object.texture.get())) {
-        auto texture=uploadTexture(object.texture);
-        try {gpuTextures.emplace(object.texture.get(),texture); ++uploadedTextures;}
+    for(const auto& shared:used) if(!gpuTextures.contains(shared.get())) {
+        auto texture=uploadTexture(shared);
+        try {gpuTextures.emplace(shared.get(),texture); ++uploadedTextures;}
         catch(...) {releaseTexture(texture); throw;}
     }
 }

@@ -117,3 +117,35 @@ installed_scripted="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/s
 if [[ -f "$installed_scripted" ]]; then scripted_scene="$installed_scripted"; fi
 timeout 60s "$binary" --x11 --validation --scene "$scripted_scene" --reload-test --resize-test --frames 90
 "$binary" script examples/scripts/garden-bot.lua "$scripted_scene"
+# Particle effects and timelines: headless renders (no display), then windowed game and editor play.
+fx_scene=assets/scenes/fx-showcase.swan.json
+installed_fx="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/fx-showcase.swan.json"
+if [[ -f "$installed_fx" ]]; then fx_scene="$installed_fx"; fi
+env -u DISPLAY -u WAYLAND_DISPLAY timeout 120s "$binary" render "$fx_scene" --validation --sheet --count 4 --columns 2 -o "$work/fx-sheet.png" 2>"$work/fx-render.log" || { cat "$work/fx-render.log"; exit 1; }
+grep -q 'Validation errors: 0' "$work/fx-render.log"
+env -u DISPLAY -u WAYLAND_DISPLAY timeout 120s "$binary" render "$fx_scene" --validation --sequence "$work/fx-frames" --from 3.3 --to 3.6 --fps 10 --size 320x180 --stats >"$work/fx-stats.jsonl" 2>"$work/fx-sequence.log" || { cat "$work/fx-sequence.log"; exit 1; }
+grep -q 'Validation errors: 0' "$work/fx-sequence.log"
+env -u DISPLAY -u WAYLAND_DISPLAY SWAN_VALIDATION=1 timeout 120s "$binary" script examples/scripts/make-fx-showcase.lua "$work/fx-generated.swan.json" "$work/fx-script-sheet.png" >"$work/fx-script.log" 2>&1 || { cat "$work/fx-script.log"; exit 1; }
+grep -q 'Validation errors: 0' "$work/fx-script.log"
+python3 - "$work" <<'PY'
+import json
+import struct
+import sys
+from pathlib import Path
+work = Path(sys.argv[1])
+def size(path):
+    data = path.read_bytes()
+    assert data[:8] == b'\x89PNG\r\n\x1a\n', path
+    return struct.unpack('>II', data[16:24])
+# 2x2 sheet of 320x180 frames with 4-pixel gaps.
+assert size(work / 'fx-sheet.png') == (2 * 320 + 3 * 4, 2 * 180 + 3 * 4), size(work / 'fx-sheet.png')
+frames = sorted((work / 'fx-frames').glob('frame_*.png'))
+assert len(frames) == 4 and all(size(f) == (320, 180) for f in frames), frames
+stats = [json.loads(line) for line in (work / 'fx-stats.jsonl').read_text().splitlines()]
+assert len(stats) == 4 and any(e['effect'] == 'explosion' for s in stats for e in s['emitters'])
+assert size(work / 'fx-script-sheet.png')[0] > 400
+print(f'FX renders verified: sheet, {len(frames)} sequence frames, script sheet')
+PY
+timeout 60s "$binary" --x11 --validation --scene "$fx_scene" --overview --frames 90 --resize-test --reload-test | tee "$work/fx-game.log"
+grep -Eq 'Particles drawn: [1-9]' "$work/fx-game.log"
+timeout 60s "$binary" --x11 --validation --editor --scene "$fx_scene" --frames 60 --resize-test

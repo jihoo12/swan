@@ -1,4 +1,5 @@
 #include "game.hpp"
+#include "fx_runtime.hpp"
 #include "physics.hpp"
 #include "scene_io.hpp"
 #include "script_runtime.hpp"
@@ -18,15 +19,20 @@ Game::Game(Garden initial,bool overview,std::filesystem::path source,std::filesy
 }
 void Game::replaceDefinition(Garden initial) {
     Garden runtime=initial; // Complete potentially throwing allocations before replacing the world.
+    FxRuntime effects(runtime.scene); // Applies the timeline at time 0.
     RenderPose pose; pose.capture(runtime.scene);
     previousPose=std::move(pose); previousTime=0;
     scriptRuntime.reset(); // Releases references into the scene being replaced.
     definition=std::move(initial); garden=std::move(runtime);
+    fx=std::make_unique<FxRuntime>(std::move(effects));
     bool scripted=false;
     for(auto id:garden.scene.entities()) scripted|=!garden.scene.get(id)->scriptId.empty();
     if(scripted) scriptRuntime=std::make_unique<ScriptRuntime>(garden.scene,[this](const std::string& line){
         messages.push_back(line);
         if(messages.size()>256) messages.erase(messages.begin());
+    });
+    if(scriptRuntime) scriptRuntime->setEffectPlayer([this](const std::string& effect,glm::vec3 position,float yaw,const std::string& entity,uint32_t seed){
+        fx->play(garden.scene,effect,position,yaw,entity,seed);
     });
     time=0; collectedCount=0; paused=false; flight=false; view=Camera{};
     playerYaw=previousPlayerYaw=view.yaw;
@@ -113,6 +119,7 @@ void Game::fixedUpdate(float dt,const Input& input) {
         ScriptGameState state{time,feet,grounded,flight,collectedCount,int(garden.shards.size()),input};
         scriptRuntime->update(dt,state);
     }
+    fx->update(garden.scene,dt);
     glm::vec3 front=forward(view.yaw,0),right=glm::cross(front,glm::vec3(0,1,0));
     glm::vec3 movement=front*input.move.y+right*input.move.x;
     if(flight) movement.y=input.vertical;
@@ -140,12 +147,14 @@ Camera Game::presentationCamera(float alpha) const {
 RenderFrame Game::renderFrame(float interpolation) const {
     float alpha=std::isfinite(interpolation)?std::clamp(interpolation,0.0f,1.0f):1.0f;
     RenderFrame frame; frame.camera=presentationCamera(alpha); frame.time=glm::mix(previousTime,time,alpha);
+    frame.environment=garden.scene.environment();
 
     frame.objects.reserve(garden.scene.size());
     for(auto id:garden.scene.entities()) {
         const auto* entity=garden.scene.get(id);
         frame.objects.push_back({previousPose.worldTransform(garden.scene,id,alpha),garden.scene.assets().get(entity->materialId),garden.scene.meshes().get(entity->meshId).data,garden.scene.textures().get(garden.scene.assets().get(entity->materialId).textureId).data});
     }
+    fx->appendTo(frame,garden.scene);
     if(thirdPerson && !flight) {
         auto eye=glm::mix(previousEye,view.position,alpha);
         float yaw=previousPlayerYaw+std::remainder(playerYaw-previousPlayerYaw,6.2831853f)*alpha;

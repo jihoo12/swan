@@ -4,6 +4,7 @@
 #include "editor_document.hpp"
 #include "editor_file_dialog.hpp"
 #include "editor_settings.hpp"
+#include "fx_player.hpp"
 #include "game.hpp"
 #include "options.hpp"
 #include "script_engine.hpp"
@@ -53,6 +54,23 @@ private:
     void drawConsole();
     void drawHistory();
     void drawScriptSection(const Entity& entity);   // editor_inspector.cpp
+    void drawEffectSection(const Entity& entity);   // editor_effects.cpp
+    void drawEnvironment();                         // Inspector without a selection
+    void drawEffectEditor();
+    void drawTimeline();                            // editor_timeline.cpp
+    // FX preview: the viewport shows a deterministic FxPlayer of the committed document while the
+    // timeline is playing or scrubbed past 0, and otherwise the document with the timeline applied
+    // at the playhead (displayed). Edits rebuild the player and seek back to the same time.
+    void updateFxPreview(float dt);
+    bool fxShowing() const;
+    const Scene& displayedScene() const { return displayed?displayed->scene:document.document().scene; }
+    // Auto Key: transform edits become timeline keys at the playhead (one undo step per drag).
+    std::optional<Timeline> keyedTimeline(const std::string& key,const Transform& local,TrackProperty property) const;
+    void keySelection(std::initializer_list<TrackProperty> properties);
+    void keyCamera();
+    void setPlayhead(double seconds);
+    void newEffect();
+    void attachEffect(const std::string& key,const std::string& effectId);
     int consoleHistoryStep(ImGuiInputTextCallbackData* data);
     // Operations.
     bool attempt(const std::function<void()>& action);
@@ -103,6 +121,15 @@ private:
     glm::vec2 pressPosition{};
     // Panels and dialogs.
     bool showHierarchy=true,showInspector=true,showAssets=true,showConsole=true,showHistory=true,showShortcuts=false,showDemo=false;
+    bool showTimeline=true,showEffectEditor=false;   // The Effect editor opens with an effect.
+    // FX preview and timeline state (never saved in scenes).
+    std::unique_ptr<FxPlayer> fxPreview;
+    std::optional<SceneDocument> displayed;   // Document with the timeline applied; empty without a timeline.
+    uint64_t fxRevision=0;
+    double fxTime=0;
+    bool fxPlaying=false,fxLoop=true,fxShotCamera=false,autoKey=false,fxPreviewFailed=false;
+    std::string selectedEffect,effectJson,effectJsonFor,effectError,focusWindow;
+    uint64_t effectJsonRevision=0;
     bool resetLayout=false,focusName=false,openUnsaved=false,quitting=false,closeApproved=false;
     std::function<void()> afterUnsaved;
     std::array<char,128> hierarchyFilter{},assetFilter{};

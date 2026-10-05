@@ -1,4 +1,5 @@
 #include "scene_io.hpp"
+#include "fx_json.hpp"
 #include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cerrno>
@@ -29,14 +30,14 @@ glm::vec3 vector(const Json& value) {
     if(!value.is_array() || value.size()!=3) throw std::invalid_argument("Expected a three-component vector");
     return {number(value[0]),number(value[1]),number(value[2])};
 }
-Json vector(glm::vec3 value) { return Json::array({value.x,value.y,value.z}); }
+Json vector(glm::vec3 value) { return Json::array({jsonNumber(value.x),jsonNumber(value.y),jsonNumber(value.z)}); }
 }
 SceneDocument parseScene(std::string_view text,const std::filesystem::path& baseDirectory) {
     if(text.size()>maxBytes) throw std::invalid_argument("Scene file exceeds 16 MiB");
     try {
         const auto root=Json::parse(text);
-        keys(root,{"format","version","spawn","materials","meshes","textures","scripts","entities"});
-        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || root.at("version")<1 || root.at("version")>6)
+        keys(root,{"format","version","spawn","materials","meshes","textures","scripts","effects","timeline","environment","entities"});
+        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || root.at("version")<1 || root.at("version")>7)
             throw std::invalid_argument("Unsupported scene format/version");
         SceneDocument document;
         document.spawn=vector(root.at("spawn"));
@@ -102,12 +103,24 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
                 document.scene.scripts().load(it.key(),base/std::filesystem::path(source));
             }
         }
+        if(root.contains("effects")) {
+            if(root.at("version")<7) throw std::invalid_argument("Effects require scene version 7");
+            const auto& effects=root.at("effects");
+            if(!effects.is_object() || effects.size()>maxEffects) throw std::invalid_argument("Effects must be an object with at most 256 entries");
+            for(auto it=effects.begin();it!=effects.end();++it) {
+                try {document.scene.effects().set(it.key(),effectFromJson(it.value()));}
+                catch(const std::exception& e) {
+                    std::string message=e.what();
+                    throw std::invalid_argument(message.starts_with("Effect ")?message:"Effect "+it.key()+": "+message);
+                }
+            }
+        }
         const auto& entities=root.at("entities");
         if(!entities.is_array() || entities.size()>maxEntities) throw std::invalid_argument("Expected an entity array with at most 10000 entries");
         for(size_t i=0;i<entities.size();++i) {
             try {
                 const auto& source=entities[i];
-                keys(source,{"id","name","mesh","material","transform","solid","collectible","goal","animation","parent","script","properties"});
+                keys(source,{"id","name","mesh","material","transform","solid","collectible","goal","animation","parent","script","properties","effect"});
                 Entity entity;
                 entity.key=source.at("id").get<std::string>();
                 if(entity.key.empty()) throw std::invalid_argument("Entity ID cannot be empty");
@@ -135,6 +148,10 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
                         }
                     }
                 }
+                if(source.contains("effect")) {
+                    if(root.at("version")<7) throw std::invalid_argument("Entity effects require scene version 7");
+                    entity.effectId=source.at("effect").get<std::string>();
+                }
                 document.scene.create(std::move(entity));
             } catch(const std::exception& e) { throw std::invalid_argument("Entity "+std::to_string(i)+": "+e.what()); }
         }
@@ -146,15 +163,26 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
             if(!document.scene.get(parent)) throw std::invalid_argument("Unknown parent: "+key);
             document.scene.setParent(document.scene.find(source.at("id").get<std::string>()),parent);
         }
+        if(root.contains("timeline")) {
+            if(root.at("version")<7) throw std::invalid_argument("Timelines require scene version 7");
+            try {document.scene.timeline()=timelineFromJson(root.at("timeline"));}
+            catch(const std::exception& e) {throw std::invalid_argument(std::string("Timeline: ")+e.what());}
+        }
+        if(root.contains("environment")) {
+            if(root.at("version")<7) throw std::invalid_argument("Environments require scene version 7");
+            try {document.scene.setEnvironment(environmentFromJson(root.at("environment")));}
+            catch(const std::exception& e) {throw std::invalid_argument(std::string("Environment: ")+e.what());}
+        }
+        document.scene.validateReferences();
         return document;
     } catch(const std::exception& e) { throw std::invalid_argument(std::string("Invalid Swan scene: ")+e.what()); }
 }
 std::string serializeScene(const SceneDocument& document,const std::filesystem::path& baseDirectory) {
-    Json root={{"format","swan-scene"},{"version",6},{"spawn",vector(document.spawn)},
+    Json root={{"format","swan-scene"},{"version",7},{"spawn",vector(document.spawn)},
                {"materials",Json::object()},{"meshes",Json::object()},{"textures",Json::object()},{"scripts",Json::object()},{"entities",Json::array()}};
     for(const auto& [id,material]:document.scene.assets().entries())
-        root["materials"][id]={{"color",vector(material.color)},{"emission",material.emission},
-            {"texture",material.textureId},{"uv_scale",Json::array({material.uvScale.x,material.uvScale.y})}};
+        root["materials"][id]={{"color",vector(material.color)},{"emission",jsonNumber(material.emission)},
+            {"texture",material.textureId},{"uv_scale",Json::array({jsonNumber(material.uvScale.x),jsonNumber(material.uvScale.y)})}};
     auto base=baseDirectory.empty()?std::filesystem::current_path():std::filesystem::absolute(baseDirectory);
     for(const auto& [id,mesh]:document.scene.meshes().entries()) if(!mesh.source.empty()) {
         std::error_code error;
@@ -172,25 +200,29 @@ std::string serializeScene(const SceneDocument& document,const std::filesystem::
         root["scripts"][id]={{"source",(error?script.source:relative).generic_string()}};
     }
     if(root["scripts"].empty()) root.erase("scripts");
+    for(const auto& [id,effect]:document.scene.effects().entries()) root["effects"][id]=effectToJson(*effect);
+    if(!document.scene.timeline().empty()) root["timeline"]=timelineToJson(document.scene.timeline());
+    if(document.scene.environment()!=Environment{}) root["environment"]=environmentToJson(document.scene.environment());
     for(auto id:document.scene.entities()) {
         const auto& e=*document.scene.get(id);
         Json entity={{"id",e.key},{"name",e.name},{"mesh",e.meshId},{"material",e.materialId},
-            {"transform",{{"position",vector(e.transform.position)},{"scale",vector(e.transform.scale)},{"yaw",e.transform.yaw}}},
+            {"transform",{{"position",vector(e.transform.position)},{"scale",vector(e.transform.scale)},{"yaw",jsonNumber(e.transform.yaw)}}},
             {"solid",e.solid},{"collectible",e.collectible},{"goal",e.goal}};
         if(auto parent=document.scene.parent(id)) entity["parent"]=document.scene.get(*parent)->key;
         if(!e.scriptId.empty()) entity["script"]=e.scriptId;
+        if(!e.effectId.empty()) entity["effect"]=e.effectId;
         if(!e.properties.empty()) {
             entity["properties"]=Json::object();
             for(const auto& [name,value]:e.properties) std::visit([&](const auto& v){entity["properties"][name]=v;},value);
         }
         if(e.animation) {
             const auto& a=*e.animation;
-            entity["animation"]={{"base_height",a.baseHeight},{"phase",a.phase},{"bob",a.bob},{"speed",a.speed}};
+            entity["animation"]={{"base_height",jsonNumber(a.baseHeight)},{"phase",jsonNumber(a.phase)},{"bob",jsonNumber(a.bob)},{"speed",jsonNumber(a.speed)}};
         }
         root["entities"].push_back(std::move(entity));
     }
     // Scene entities are mutable at runtime. Revalidate before touching any file.
-    auto text=root.dump(2)+"\n";
+    auto text=dumpJson(root)+"\n";
     parseScene(text,baseDirectory);
     return text;
 }

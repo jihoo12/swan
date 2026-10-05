@@ -2,7 +2,9 @@
 #include "game.hpp"
 #include "editor_layer.hpp"
 #include "scene_io.hpp"
+#include "render_command.hpp"
 #include "script_api.hpp"
+#include <cstdlib>
 #include <iostream>
 #include <charconv>
 int main(int argc,char** argv) {
@@ -10,8 +12,13 @@ int main(int argc,char** argv) {
         // Headless automation: no window, GPU, or GLFW initialization.
         if(argc>=2 && std::string(argv[1])=="script") {
             if(argc<3) throw std::runtime_error("Usage: swan script FILE.lua [ARGS...]");
-            return swan::runScriptFile(argv[2],std::vector<std::string>(argv+3,argv+argc));
+            // Preview:render() creates a headless GPU renderer on first use.
+            swan::LazyRenderer gpu(std::getenv("SWAN_VALIDATION")!=nullptr);
+            int status=swan::runScriptFile(argv[2],std::vector<std::string>(argv+3,argv+argc),gpu.renderer());
+            gpu.finish();
+            return status;
         }
+        if(argc>=2 && std::string(argv[1])=="render") return swan::runRenderCommand(std::vector<std::string>(argv+2,argv+argc));
         swan::Options options;
         for(int i=1;i<argc;++i) {
             std::string arg=argv[i];
@@ -19,7 +26,7 @@ int main(int argc,char** argv) {
                 options.editor=true;
                 if(i+1<argc && argv[i+1][0]!='-') options.scenePath=argv[++i];
             } else if(arg=="--help") {
-                std::cout << "Swan — Vulkan 3D garden\nUsage: swan editor [SCENE] | swan script FILE.lua [ARGS...] | swan [--editor] [--validation] [--x11] [--overview] [--third-person] [--no-culling] [--verify-mesh-uploads] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
+                std::cout << "Swan — Vulkan 3D garden\nUsage: swan editor [SCENE] | swan script FILE.lua [ARGS...] | swan render SCENE [OPTIONS] (see swan render --help) | swan [--editor] [--validation] [--x11] [--overview] [--third-person] [--no-culling] [--verify-mesh-uploads] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
                           << "WASD move | Shift sprint | click to look | Space jump | E collect\nV toggle first/third person | F toggle flight (Space/Ctrl ascend/descend) | P pause | R respawn | F5 reload | F6 save definition | Esc release / quit\n";
                 return 0;
             } else if(arg=="--validation") options.validation=true;

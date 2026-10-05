@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(swan VERSION 0.16.0 LANGUAGES CXX)
+project(swan VERSION 0.17.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Vulkan REQUIRED)
@@ -40,16 +40,17 @@ add_library(swan_ui_deps STATIC
 target_include_directories(swan_ui_deps SYSTEM PUBLIC ${SWAN_IMGUI_DIR} ${SWAN_IMGUI_DIR}/backends ${SWAN_IMGUI_DIR}/misc/cpp ${SWAN_IMGUIZMO_DIR}/src)
 target_compile_definitions(swan_ui_deps PUBLIC IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 target_link_libraries(swan_ui_deps PUBLIC Vulkan::Vulkan glfw)
-foreach(stage vert frag)
-  set(output "${CMAKE_CURRENT_BINARY_DIR}/shaders/scene.${stage}.spv")
+foreach(shader scene.vert scene.frag particle.vert particle.frag post.vert post.frag)
+  set(output "${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader}.spv")
   add_custom_command(OUTPUT "${output}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders"
-    COMMAND ${GLSLANG_VALIDATOR} -V --target-env vulkan1.3 "${CMAKE_CURRENT_SOURCE_DIR}/shaders/scene.${stage}" -o "${output}"
-    DEPENDS "shaders/scene.${stage}" VERBATIM)
+    COMMAND ${GLSLANG_VALIDATOR} -V --target-env vulkan1.3 "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}" -o "${output}"
+    DEPENDS "shaders/${shader}" "shaders/frame.glsl" VERBATIM)
   list(APPEND SHADERS "${output}")
 endforeach()
 add_custom_target(swan_shaders ALL DEPENDS ${SHADERS})
-add_library(swan_core src/resources.cpp src/fuzzy.cpp src/editor_camera.cpp src/editor_settings.cpp src/assets.cpp src/texture.cpp src/mesh.cpp src/scene.cpp src/scene_io.cpp src/physics.cpp src/visibility.cpp src/render_pose.cpp src/camera_rig.cpp src/model.cpp src/editor_document.cpp src/editor_view.cpp)
+add_library(swan_core src/resources.cpp src/fuzzy.cpp src/editor_camera.cpp src/editor_settings.cpp src/assets.cpp src/texture.cpp src/mesh.cpp src/scene.cpp src/scene_io.cpp src/physics.cpp src/visibility.cpp src/render_pose.cpp src/camera_rig.cpp src/model.cpp src/editor_document.cpp src/editor_view.cpp
+  src/fx.cpp src/fx_io.cpp src/fx_runtime.cpp src/timeline.cpp src/image.cpp)
 target_include_directories(swan_core PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/swan>)
 target_link_libraries(swan_core PUBLIC glm::glm PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader PNG::PNG assimp::assimp)
@@ -62,7 +63,8 @@ target_compile_options(swan_script PRIVATE -Wall -Wextra -Wpedantic)
 add_library(swan_demo src/garden.cpp src/game.cpp)
 target_link_libraries(swan_demo PUBLIC swan_core PRIVATE swan_script)
 target_compile_options(swan_demo PRIVATE -Wall -Wextra -Wpedantic)
-add_library(swan_renderer src/renderer.cpp src/renderer_texture.cpp src/renderer_mesh.cpp src/renderer_gui.cpp src/renderer_target.cpp)
+add_library(swan_renderer src/renderer.cpp src/renderer_texture.cpp src/renderer_mesh.cpp src/renderer_gui.cpp src/renderer_target.cpp
+  src/renderer_particles.cpp src/renderer_offscreen.cpp src/renderer_post.cpp)
 add_dependencies(swan_renderer swan_shaders)
 target_link_libraries(swan_renderer PUBLIC swan_core Vulkan::Vulkan glfw PRIVATE swan_ui_deps)
 target_compile_definitions(swan_renderer PRIVATE SWAN_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders")
@@ -71,11 +73,11 @@ add_library(swan_runtime src/engine.cpp)
 target_link_libraries(swan_runtime PUBLIC swan_renderer)
 target_compile_options(swan_runtime PRIVATE -Wall -Wextra -Wpedantic)
 # Headless C++ API (Simulation) and the Lua automation API used by `swan script` and the editor.
-add_library(swan_headless src/simulation.cpp src/script_api.cpp)
-target_link_libraries(swan_headless PUBLIC swan_demo swan_script)
+add_library(swan_headless src/simulation.cpp src/script_api.cpp src/fx_player.cpp src/fx_capture.cpp)
+target_link_libraries(swan_headless PUBLIC swan_demo swan_script PRIVATE nlohmann_json::nlohmann_json)
 target_compile_options(swan_headless PRIVATE -Wall -Wextra -Wpedantic)
 target_compile_definitions(swan_headless PRIVATE SWAN_VERSION="${PROJECT_VERSION}")
-add_executable(swan src/main.cpp)
+add_executable(swan src/main.cpp src/render_command.cpp)
 target_link_libraries(swan PRIVATE swan_runtime swan_demo swan_headless)
 target_compile_options(swan PRIVATE -Wall -Wextra -Wpedantic)
 install(TARGETS swan RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -132,6 +134,11 @@ add_executable(key_bindings_test tests/key_bindings_test.cpp)
 target_link_libraries(key_bindings_test PRIVATE swan_demo glfw)
 add_test(NAME key_bindings COMMAND key_bindings_test)
 
+add_executable(fx_test tests/fx_test.cpp)
+target_link_libraries(fx_test PRIVATE swan_core nlohmann_json::nlohmann_json)
+add_test(NAME fx COMMAND fx_test)
+add_test(NAME fx_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fx-showcase.swan.json")
+
 add_executable(swan-scene src/scene_edit_main.cpp)
 target_link_libraries(swan-scene PRIVATE swan_core nlohmann_json::nlohmann_json)
 install(TARGETS swan-scene RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -140,7 +147,8 @@ target_link_libraries(editor_document_test PRIVATE swan_demo)
 add_test(NAME editor_document COMMAND editor_document_test)
 
 add_library(swan_editor src/editor_layer.cpp src/editor_theme.cpp src/editor_actions.cpp src/editor_hierarchy.cpp
-  src/editor_inspector.cpp src/editor_viewport.cpp src/editor_panels.cpp src/editor_file_dialog.cpp src/editor_probe.cpp)
+  src/editor_inspector.cpp src/editor_viewport.cpp src/editor_panels.cpp src/editor_file_dialog.cpp src/editor_probe.cpp
+  src/editor_timeline.cpp src/editor_effects.cpp)
 target_link_libraries(swan_editor PUBLIC swan_headless swan_ui_deps PRIVATE nlohmann_json::nlohmann_json)
 target_compile_definitions(swan_editor PRIVATE SWAN_FONT_DIR="${CMAKE_CURRENT_BINARY_DIR}/fonts")
 target_compile_options(swan_editor PRIVATE -Wall -Wextra -Wpedantic -Wno-missing-field-initializers)
@@ -170,6 +178,10 @@ add_test(NAME scripted_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOUR
 add_test(NAME script_bot COMMAND swan script "${CMAKE_CURRENT_SOURCE_DIR}/examples/scripts/garden-bot.lua" "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/scripted-garden.swan.json")
 add_test(NAME script_report COMMAND swan script "${CMAKE_CURRENT_SOURCE_DIR}/examples/scripts/scene-report.lua" "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/scripted-garden.swan.json")
 set_tests_properties(script_report PROPERTIES PASS_REGULAR_EXPRESSION "13 entities, 6 materials, 4 scripts")
+# FX automation without a GPU: regenerate the showcase into the build tree and query statistics.
+add_test(NAME fx_showcase_script COMMAND swan script "${CMAKE_CURRENT_SOURCE_DIR}/examples/scripts/make-fx-showcase.lua" "${CMAKE_CURRENT_BINARY_DIR}/fx-showcase.swan.json")
+add_test(NAME fx_render_stats COMMAND swan render "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/fx-showcase.swan.json" --stats-only --time 4)
+set_tests_properties(fx_render_stats PROPERTIES PASS_REGULAR_EXPRESSION "\"effect\":\"explosion\",\"emitter\":\"sparks\",\"particles\":2[0-9][0-9]")
 
 # Installable headless SDK: find_package(swan CONFIG) then link swan::headless.
 set_target_properties(swan_core PROPERTIES EXPORT_NAME core)
@@ -184,7 +196,8 @@ install(FILES src/swan.hpp src/assets.hpp src/camera.hpp src/camera_rig.hpp src/
   src/editor_settings.hpp src/editor_view.hpp src/fixed_step.hpp src/fuzzy.hpp src/game.hpp src/game_layer.hpp src/garden.hpp
   src/input.hpp src/mesh.hpp src/model.hpp src/physics.hpp src/render_frame.hpp src/render_pose.hpp src/resources.hpp
   src/scene.hpp src/scene_io.hpp src/script_api.hpp src/script_engine.hpp src/script_runtime.hpp src/simulation.hpp
-  src/texture.hpp src/visibility.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/swan)
+  src/texture.hpp src/visibility.hpp src/fx.hpp src/fx_io.hpp src/fx_runtime.hpp src/fx_player.hpp src/fx_capture.hpp
+  src/timeline.hpp src/image.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/swan)
 install(EXPORT swanTargets NAMESPACE swan:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/swan)
 include(CMakePackageConfigHelpers)
 configure_package_config_file(cmake/swanConfig.cmake.in "${CMAKE_CURRENT_BINARY_DIR}/swanConfig.cmake"

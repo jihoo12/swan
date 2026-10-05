@@ -2,13 +2,13 @@
 #include "editor_icons.hpp"
 #include "editor_probe.hpp"
 #include "editor_theme.hpp"
+#include "editor_widgets.hpp"
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <imgui_stdlib.h>
 #include <cstdio>
 namespace swan {
-namespace {
-// Two-column property table: dim label on the left, full-width editor on the right.
+namespace ui {
 bool beginProperties(const char* id) {
     if(!ImGui::BeginTable(id,2,ImGuiTableFlags_SizingStretchProp)) return false;
     ImGui::TableSetupColumn("label",ImGuiTableColumnFlags_WidthFixed,ImGui::GetFontSize()*4.6f);
@@ -20,8 +20,7 @@ void property(const char* label) {
     ImGui::AlignTextToFramePadding();ImGui::TextColored(toVec4(theme::TextDim),"%s",label);
     ImGui::TableNextColumn();ImGui::SetNextItemWidth(-FLT_MIN);
 }
-// X/Y/Z drags with colored axis tabs; clicking a tab resets that component.
-bool vectorControl(const char* id,glm::vec3& value,float speed,float reset,const char* probePrefix,const char* format="%.2f",float minimum=0) {
+bool vectorControl(const char* id,glm::vec3& value,float speed,float reset,const char* probePrefix,const char* format,float minimum) {
     bool changed=false;
     ImGui::PushID(id);
     float tab=ImGui::GetFrameHeight()*0.62f,spacing=ImGui::GetStyle().ItemSpacing.x*0.5f;
@@ -61,15 +60,16 @@ bool sectionHeader(const char* glyph,const char* title,const char* id) {
     return open;
 }
 }
+using namespace ui;
 void EditorLayer::drawInspector() {
     auto title=std::string(icon::Sliders)+"  Inspector###Inspector";
     if(!ImGui::Begin(title.c_str(),&showInspector)) {ImGui::End();return;}
     const auto* selected=selectedEntity();
     if(!selected) {
-        auto region=ImGui::GetContentRegionAvail();
-        const char* text="Select an entity to inspect it";
-        ImGui::SetCursorPos({std::max(0.0f,(region.x-ImGui::CalcTextSize(text).x)*0.5f),region.y*0.4f});
-        ImGui::TextColored(toVec4(theme::TextDim),"%s",text);
+        // Without a selection the inspector shows scene-wide settings.
+        ImGui::BeginDisabled(!editable());
+        drawEnvironment();
+        ImGui::EndDisabled();
         ImGui::End();return;
     }
     // Copy: previews replace the document while widgets below are still drawing.
@@ -110,17 +110,22 @@ void EditorLayer::drawInspector() {
         ImGui::SetItemTooltip("Stable entity ID (used in scene files)");
         ImGui::EndGroup();
     }
-    // Transform.
-    if(sectionHeader(icon::Move,"Transform","transform") && beginProperties("##transform")) {
+    // Transform. With Auto Key, edits record timeline keys at the playhead instead.
+    auto transformEdit=[&](const Transform& t,TrackProperty property,const std::string& label) {
+        if(!autoKey) {preview(SetTransform{key,t},label);return;}
+        if(auto timeline=keyedTimeline(key,t,property)) preview(SetTimeline{*timeline},"Key "+std::string(propertyName(property))+" of "+display);
+    };
+    if(sectionHeader(icon::Move,autoKey?"Transform  \xc2\xb7  Auto Key":"Transform","transform") && beginProperties("##transform")) {
         auto t=entity.transform;
+        if(autoKey) {const auto& shown=displayedScene();if(const auto* e=shown.get(shown.find(key))) t=e->transform;}
         property("Position");
-        if(vectorControl("position",t.position,0.05f,0,"inspector/position")) preview(SetTransform{key,t},"Move "+display);
+        if(vectorControl("position",t.position,0.05f,0,"inspector/position")) transformEdit(t,TrackProperty::Position,"Move "+display);
         property("Rotation");
         float degrees=glm::degrees(t.yaw);
-        if(ImGui::DragFloat("##yaw",&degrees,0.5f,0,0,"Y  %.1f\xc2\xb0")) {t.yaw=glm::radians(degrees);preview(SetTransform{key,t},"Rotate "+display);}
+        if(ImGui::DragFloat("##yaw",&degrees,0.5f,0,0,"Y  %.1f\xc2\xb0")) {t.yaw=glm::radians(degrees);transformEdit(t,TrackProperty::Yaw,"Rotate "+display);}
         probe::item("inspector/yaw");
         property("Scale");
-        if(vectorControl("scale",t.scale,0.01f,1,"inspector/scale","%.3f",0.001f)) preview(SetTransform{key,t},"Scale "+display);
+        if(vectorControl("scale",t.scale,0.01f,1,"inspector/scale","%.3f",0.001f)) transformEdit(t,TrackProperty::Scale,"Scale "+display);
         ImGui::EndTable();
         if(parent) ImGui::TextColored(toVec4(theme::TextDim),"%s  Relative to parent %s",icon::Info,parentKey.c_str());
     }
@@ -175,6 +180,7 @@ void EditorLayer::drawInspector() {
         ImGui::EndTable();
     }
     drawScriptSection(entity);
+    drawEffectSection(entity);
     // Hierarchy.
     if(sectionHeader(icon::Tree,"Hierarchy","hierarchy") && beginProperties("##parenting")) {
         property("Parent");

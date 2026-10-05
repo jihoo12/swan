@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine with a docking scene editor, Lua scripting, and a headless C++ SDK. Version 0.16 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine with a docking scene editor, Lua scripting, a headless C++ SDK, and FX animation: particle effects, keyframed timelines, and HDR bloom that can be authored, measured, and rendered entirely without a window (see [the FX guide](docs/FX.md)). Version 0.16 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -179,6 +179,9 @@ nix flake check path:.
 | `src/script_engine.*`, `src/script_lua.*` | Lua 5.4 VM (sandbox, memory cap, instruction budget) and C API binding helpers |
 | `src/script_runtime.*`, `assets/scripts/` | Per-entity behaviour scripts in play, and sample behaviours |
 | `src/simulation.*`, `src/script_api.*`, `src/swan.hpp` | Headless C++ SDK and the Lua automation API (`swan script`, editor console) |
+| `src/fx.*`, `src/timeline.*`, `src/fx_io.*`, `src/fx_runtime.*` | Effect and timeline data, JSON schema, deterministic particle/timeline runtime |
+| `src/fx_player.*`, `src/fx_capture.*`, `src/image.*`, `src/render_command.*` | Headless FX preview, frame/contact-sheet capture, PNG helpers, `swan render` |
+| `src/renderer_{particles,post,offscreen}.cpp`, `shaders/{particle,post}.*` | Particle billboards, HDR bloom/tone-map, windowless rendering and readback |
 | `lua/types/`, `.luarc.json`, `examples/` | LuaLS type definitions, automation scripts, an out-of-tree C++ SDK consumer |
 | `tests/`, `scripts/smoke-test.sh`, `scripts/editor-ui-test.sh` | CPU, graphical, and real-input editor verification |
 
@@ -239,6 +242,35 @@ A headless frontend exercises the same command API:
 
 Version 0.14 added the first Dear ImGui editor on top of that command layer; version 0.15 replaces its fixed side panels with the docking editor described below.
 
+## FX animation (0.17)
+
+![FX showcase rendered headlessly by Swan](docs/fx-showcase.png)
+
+Scene version 7 adds particle **effects** (1–16 emitters each), entity-attached effects, a **timeline** of keyframe tracks, one-shot effect events, and a shot camera, plus a scene **environment** (background, fog, lighting, exposure, bloom, tone map). The renderer draws the scene and particles into an HDR target, then bloom and tone-maps. Simulation is CPU-side and deterministic at the fixed 120 Hz tick, so the same scene and seed always produce the same frames.
+
+The workflow targets automation and AI agents: author through the undoable Lua API, query particle statistics without a GPU, render labeled contact sheets with headless Vulkan, look at them, and iterate.
+
+```sh
+./build/swan script examples/scripts/make-fx-showcase.lua /tmp/fx.swan.json /tmp/fx-sheet.png
+./build/swan render assets/scenes/fx-showcase.swan.json --sheet -o /tmp/sheet.png      # labeled frames
+./build/swan render assets/scenes/fx-showcase.swan.json --sequence /tmp/frames --fps 24 # PNG sequence
+./build/swan render assets/scenes/fx-showcase.swan.json --stats-only --time 3.5         # JSON, no GPU
+./build/swan --scene assets/scenes/fx-showcase.swan.json --overview                    # play it live
+```
+
+```lua
+local doc = swan.open("assets/scenes/fx-showcase.swan.json")
+doc:set_effect("puff", { emitters = { { bursts = { { 0, 30 } }, lifetime = 1, speed = { 1, 2 }, spread = 180,
+                                        color_over_life = { { 0, { 1, 0.7, 0.3 } }, { 1, { 1, 0.2, 0, 0 } } }, intensity = 4 } } })
+doc:add_event{ time = 1, effect = "puff", entity = "campfire" }
+local preview = swan.preview(doc)
+preview:seek(1.2)
+print(preview:stats().particles)
+preview:render_sheet("/tmp/puff.png", { from = 0.9, to = 2, count = 6 })
+```
+
+[docs/FX.md](docs/FX.md) documents every emitter, timeline, and environment field with defaults, the Lua and command-line APIs, recipes (fire, smoke, explosions, portals, trails, rain), and limits. Behaviour scripts can also call `game.effect(id, {...})` and set `entity.effect`. Effects run in the game, in editor Play, in `swan.simulate`, and in `swan.preview`. `FxPlayer`, `FxRuntime`, `parseEffect`, and the capture helpers are part of the installed headless SDK.
+
 ## Scene editor
 
 ```bash
@@ -248,7 +280,7 @@ Version 0.14 added the first Dear ImGui editor on top of that command layer; ver
 
 ![Swan's scene editor](docs/editor.png)
 
-The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets**, **Console**, and **History** can be rearranged, tabbed, or closed (View menu reopens them; *View > Reset Layout* restores the default). The layout, recent files, camera speed, snapping, and UI size persist per user in `$XDG_CONFIG_HOME/swan` (`~/.config/swan`), or `$SWAN_CONFIG_HOME` when set — never in scene files.
+The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets**, **Console**, **History**, **Timeline**, and **Effect** can be rearranged, tabbed, or closed (View menu reopens them; *View > Reset Layout* restores the default). The layout, recent files, camera speed, snapping, and UI size persist per user in `$XDG_CONFIG_HOME/swan` (`~/.config/swan`), or `$SWAN_CONFIG_HOME` when set — never in scene files.
 
 **Editing is live.** Inspector drags, typed values, color pickers, and gizmo drags update the scene immediately as an uncommitted preview; releasing the widget commits exactly one undo step (*Move Crystal pedestal*, *Edit material gold*, ...). A drag that ends where it started, or a text edit cancelled with Esc, adds no history. Invalid intermediate values (e.g. a zero scale while typing) keep the last valid preview and are reported in the Console. There are no Apply buttons.
 
@@ -265,6 +297,9 @@ The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets
 | Undo / redo, history | **Ctrl+Z**, **Ctrl+Shift+Z** / Ctrl+Y; click a History entry to jump |
 | New, open, save, save as | **Ctrl+N**, **Ctrl+O**, **Ctrl+S**, **Ctrl+Shift+S** (in-app scene browser) |
 | Play / stop | **F5** (or Ctrl+P); click the viewport to capture the mouse, Esc releases it |
+| Preview effects and the timeline | **Space** plays/pauses, **Shift+Space** rewinds; scrub the Timeline ruler; clapperboard views the shot camera |
+| Animate | **I** keys the selection's transform at the playhead; **Auto Key** turns gizmo/Inspector edits into keys; drag keys to retime, right-click for ease/delete |
+| Effects | *Assets ▸ Effects ▸ New Effect*; drag an effect onto an entity; edit emitters (or full JSON) in the Effect panel; with nothing selected the Inspector edits the environment |
 | UI size, shortcuts | Ctrl+= / Ctrl+- / Ctrl+0; **F1** lists every shortcut |
 
 New, Open, Revert, Quit, and closing the window ask before discarding unsaved changes (**•** in the title bar). Gizmo rotation is yaw-only and scaling an entity that has children stays uniform, matching the scene's transform model. Play copies the authored scene and runs the garden game inside the viewport; Stop discards runtime changes, and editing is disabled while playing. Scenes without the garden's goal/collectible roles stay editable, but Play reports an error.
@@ -323,7 +358,7 @@ doc:save("/tmp/raised.swan.json")
 The package installs static libraries, window-free headers, and a CMake package. Link `swan::headless`:
 
 ```cmake
-find_package(swan 0.16 CONFIG REQUIRED)
+find_package(swan 0.17 CONFIG REQUIRED)
 target_link_libraries(app PRIVATE swan::headless)
 ```
 

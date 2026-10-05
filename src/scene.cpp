@@ -37,6 +37,7 @@ EntityId Scene::create(Entity entity) {
     }
     if(entity.goal && entity.collectible) throw std::invalid_argument("A goal cannot also be collectible");
     if(!entity.scriptId.empty() && !scriptAssets.contains(entity.scriptId)) throw std::invalid_argument("Unknown script asset: "+entity.scriptId);
+    if(!entity.effectId.empty() && !effectAssets.contains(entity.effectId)) throw std::invalid_argument("Unknown effect asset: "+entity.effectId);
     if(entity.properties.size()>32) throw std::invalid_argument("An entity supports at most 32 script properties");
     for(const auto& [name,value]:entity.properties) {
         if(name.empty() || name.size()>64) throw std::invalid_argument("Script property names need 1..64 characters");
@@ -65,6 +66,7 @@ EntityId Scene::create(Entity entity) {
 void Scene::validate() const {
     Scene checked;
     checked.materialAssets=materialAssets; checked.meshAssets=meshAssets; checked.textureAssets=textureAssets; checked.scriptAssets=scriptAssets;
+    checked.effectAssets=effectAssets;checked.sceneTimeline=sceneTimeline;checked.setEnvironment(sceneEnvironment);
     std::vector<EntityId> mapped(slots.size());
     for(auto id:entities()) mapped[id.index]=checked.create(*get(id));
     for(auto id:entities()) if(auto ancestor=parent(id)) {
@@ -72,6 +74,38 @@ void Scene::validate() const {
         checked.slots[mapped[id.index].index].parent=mapped[ancestor->index];
     }
     for(auto id:checked.entities()) checked.worldTransform(id);
+    checked.validateReferences();
+}
+void Scene::setEnvironment(Environment value) {
+    auto finite=[](float v){return std::isfinite(v);};
+    for(int i=0;i<3;++i) if(!finite(value.background[i]) || value.background[i]<0) throw std::invalid_argument("Environment background must be finite and nonnegative");
+    for(float v:{value.fog,value.ambient,value.sun,value.localLight,value.bloom})
+        if(!finite(v) || v<0) throw std::invalid_argument("Environment fog, lighting, and bloom must be finite and nonnegative");
+    if(!finite(value.exposure) || value.exposure<=0 || value.exposure>64) throw std::invalid_argument("Environment exposure must be within 0..64");
+    if(!finite(value.bloomThreshold) || value.bloomThreshold<0) throw std::invalid_argument("Environment bloom threshold must be nonnegative");
+    sceneEnvironment=value;
+}
+void Scene::validateReferences() const {
+    for(const auto& [id,effect]:effectAssets.entries())
+        for(const auto& emitter:effect->emitters)
+            if(!emitter.texture.empty() && !textureAssets.contains(emitter.texture))
+                throw std::invalid_argument("Effect "+id+": unknown texture asset: "+emitter.texture);
+    validateTimeline(sceneTimeline);
+    for(const auto& track:sceneTimeline.tracks) {
+        if(track.kind==TrackTarget::Material) {if(!materialAssets.contains(track.target)) throw std::invalid_argument("Timeline track targets unknown material: "+track.target);}
+        else if(track.kind==TrackTarget::Entity) {
+            auto id=find(track.target);
+            if(!get(id)) throw std::invalid_argument("Timeline track targets unknown entity: "+track.target);
+            if(track.property==TrackProperty::Scale)
+                for(auto child:entities()) if(parent(child)==id)
+                    for(const auto& key:track.vector.keys)
+                        if(key.value.x!=key.value.y || key.value.x!=key.value.z) throw std::invalid_argument("Timeline scale of parent "+track.target+" must stay uniform");
+        }
+    }
+    for(const auto& event:sceneTimeline.events) {
+        if(!effectAssets.contains(event.effect)) throw std::invalid_argument("Timeline event uses unknown effect: "+event.effect);
+        if(!event.entity.empty() && !get(find(event.entity))) throw std::invalid_argument("Timeline event targets unknown entity: "+event.entity);
+    }
 }
 EntityId Scene::find(const std::string& key) const {
     for(uint32_t i=0;i<slots.size();++i)

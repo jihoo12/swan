@@ -13,7 +13,14 @@ struct DeleteEntity { std::string key; };
 struct SetEntityScript { std::string key,scriptId; ScriptProperties properties; };
 // Registers (or re-reads) a Lua file as a script asset.
 struct AddScript { std::string id; std::filesystem::path path; };
-using SceneEdit=std::variant<SetTransform,SetEntityProperties,SetMaterial,CreateMaterial,SetParent,CreateEntity,DeleteEntity,SetEntityScript,AddScript>;
+// Creates or replaces an effect; an empty value deletes it, clearing entity references and
+// removing timeline events that play it.
+struct SetEffect { std::string id; std::optional<EffectDef> value; };
+struct SetEntityEffect { std::string key,effectId; };   // Empty effectId detaches.
+struct SetTimeline { Timeline value; };
+struct SetEnvironment { Environment value; };
+using SceneEdit=std::variant<SetTransform,SetEntityProperties,SetMaterial,CreateMaterial,SetParent,CreateEntity,DeleteEntity,SetEntityScript,AddScript,
+                             SetEffect,SetEntityEffect,SetTimeline,SetEnvironment>;
 // Human-readable history label, e.g. "Move Crystal pedestal", resolved against the pre-edit scene.
 std::string describe(const SceneEdit& edit,const Scene& scene);
 // Frontends retain keys, not entity handles, across edits and history navigation.

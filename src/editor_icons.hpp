@@ -63,4 +63,15 @@ inline constexpr const char* House="";
 inline constexpr const char* Pencil="";
 inline constexpr const char* Layout="";
 inline constexpr const char* Frame="";
+inline constexpr const char* Pause="";
+inline constexpr const char* SkipBack="";
+inline constexpr const char* Repeat="";
+inline constexpr const char* Diamond="";
+inline constexpr const char* Flame="";
+inline constexpr const char* Sun="";
+inline constexpr const char* Film="";
+inline constexpr const char* Clapperboard="";
+inline constexpr const char* Zap="";
+inline constexpr const char* Timer="";
+inline constexpr const char* Orbit="";
 }

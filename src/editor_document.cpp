@@ -44,11 +44,26 @@ void applyEdit(SceneDocument& document,std::string& selection,const SceneEdit& e
             auto id=scene.create(command.value);
             if(command.parent) scene.setParent(id,requireEntity(scene,*command.parent));
             selection=scene.get(id)->key;
-        } else if constexpr(std::is_same_v<T,DeleteEntity>) scene.destroy(requireEntity(scene,command.key));
+        } else if constexpr(std::is_same_v<T,DeleteEntity>) {
+            scene.destroy(requireEntity(scene,command.key));
+            scene.timeline().removeEntity(command.key); // Tracks/events on a deleted entity go with it.
+        }
         else if constexpr(std::is_same_v<T,SetEntityScript>) {
             auto* entity=scene.get(requireEntity(scene,command.key));
             entity->scriptId=command.scriptId;entity->properties=command.properties;
         } else if constexpr(std::is_same_v<T,AddScript>) scene.scripts().load(command.id,command.path);
+        else if constexpr(std::is_same_v<T,SetEffect>) {
+            if(command.value) scene.effects().set(command.id,*command.value);
+            else {
+                if(!scene.effects().erase(command.id)) throw std::invalid_argument("Unknown editor effect: "+command.id);
+                for(auto id:scene.entities()) if(scene.get(id)->effectId==command.id) scene.get(id)->effectId.clear();
+                scene.timeline().removeEffect(command.id);
+            }
+        } else if constexpr(std::is_same_v<T,SetEntityEffect>) {
+            if(!command.effectId.empty() && !scene.effects().contains(command.effectId)) throw std::invalid_argument("Unknown editor effect: "+command.effectId);
+            scene.get(requireEntity(scene,command.key))->effectId=command.effectId;
+        } else if constexpr(std::is_same_v<T,SetTimeline>) scene.timeline()=command.value;
+        else if constexpr(std::is_same_v<T,SetEnvironment>) scene.setEnvironment(command.value);
     },edit);
 }
 }
@@ -63,7 +78,11 @@ std::string describe(const SceneEdit& edit,const Scene& scene) {
         else if constexpr(std::is_same_v<T,CreateEntity>) return "Create "+(command.value.name.empty()?std::string("entity"):command.value.name);
         else if constexpr(std::is_same_v<T,DeleteEntity>) return "Delete "+displayName(scene,command.key);
         else if constexpr(std::is_same_v<T,SetEntityScript>) return "Edit script of "+displayName(scene,command.key);
-        else return "Add script "+command.id;
+        else if constexpr(std::is_same_v<T,AddScript>) return "Add script "+command.id;
+        else if constexpr(std::is_same_v<T,SetEffect>) return (command.value?(scene.effects().contains(command.id)?"Edit effect ":"Create effect "):"Delete effect ")+command.id;
+        else if constexpr(std::is_same_v<T,SetEntityEffect>) return (command.effectId.empty()?"Remove effect from ":"Set effect of ")+displayName(scene,command.key);
+        else if constexpr(std::is_same_v<T,SetTimeline>) return "Edit timeline";
+        else return "Edit environment";
     },edit);
 }
 EditorDocument::EditorDocument(SceneDocument document,size_t limit):state{std::move(document),{},0},historyLimit(limit) {
