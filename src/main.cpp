@@ -26,7 +26,7 @@ int main(int argc,char** argv) {
                 options.editor=true;
                 if(i+1<argc && argv[i+1][0]!='-') options.scenePath=argv[++i];
             } else if(arg=="--help") {
-                std::cout << "Swan — Vulkan 3D garden\nUsage: swan editor [SCENE] | swan script FILE.lua [ARGS...] | swan render SCENE [OPTIONS] (see swan render --help) | swan [--editor] [--validation] [--x11] [--overview] [--third-person] [--no-culling] [--verify-mesh-uploads] [--frames N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
+                std::cout << "Swan — Vulkan 3D garden\nUsage: swan editor [SCENE] | swan script FILE.lua [ARGS...] | swan render SCENE [OPTIONS] (see swan render --help) | swan [--editor] [--validation] [--x11] [--overview] [--third-person] [--no-culling] [--verify-mesh-uploads] [--frames N] [--fps-limit N] [--resize-test] [--reload-test] [--shader-dir PATH]\nScene: [--scene PATH] [--save-scene PATH] [--export-scene PATH] [--validate-scene PATH]\n"
                           << "WASD move | Shift sprint | click to look | Space jump | E collect\nV toggle first/third person | F toggle flight (Space/Ctrl ascend/descend) | P pause | R respawn | F5 reload | F6 save definition | Esc release / quit\n";
                 return 0;
             } else if(arg=="--validation") options.validation=true;
@@ -43,6 +43,11 @@ int main(int argc,char** argv) {
             else if(arg=="--export-scene" && i+1<argc) options.exportPath=argv[++i];
             else if(arg=="--validate-scene" && i+1<argc) { options.scenePath=argv[++i]; options.validateScene=true; }
             else if(arg=="--shader-dir" && i+1<argc) options.shaderDir=argv[++i];
+            else if(arg=="--fps-limit" && i+1<argc) {
+                std::string value=argv[++i];
+                auto [end,ec]=std::from_chars(value.data(),value.data()+value.size(),options.fpsLimit);
+                if(ec!=std::errc{} || end!=value.data()+value.size() || options.fpsLimit<0 || options.fpsLimit>1000) throw std::runtime_error("--fps-limit requires 0 (unlimited) to 1000");
+            }
             else if(arg=="--frames" && i+1<argc) {
                 std::string value=argv[++i];
                 auto [end,ec]=std::from_chars(value.data(),value.data()+value.size(),options.frames);

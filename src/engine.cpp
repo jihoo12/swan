@@ -3,6 +3,7 @@
 #include "renderer.hpp"
 #include <chrono>
 #include <iostream>
+#include <thread>
 namespace swan {
 void Engine::run(GameLayer& game) {
     VulkanRenderer renderer(options);
@@ -11,6 +12,7 @@ void Engine::run(GameLayer& game) {
     int frames=0,titleFrames=0;
     std::string lastStatus;
     float fps=0;
+    auto deadline=std::chrono::steady_clock::now();
     std::cout << "Scene: " << game.renderFrame(1).objects.size() << " render objects\n";
     if(renderer.hasGui()) game.initializeGui();
     while(game.running() && (!options.frames || frames<options.frames)) {
@@ -40,6 +42,16 @@ void Engine::run(GameLayer& game) {
             renderer.setTitle("SWAN | "+std::to_string(int(fps))+" FPS | "+status);
             titleFrames=0; titleTime=now;
         }
+        // Frame pacing: sleep to the next frame slot instead of rendering as fast as possible.
+        int limit=options.fpsLimit>=0?options.fpsLimit:game.frameRateLimit();
+        if(limit>0) {
+            auto period=std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::duration<double>(1.0/limit));
+            deadline+=period;
+            auto current=std::chrono::steady_clock::now();
+            // After a stall, start a fresh schedule rather than rushing to catch up.
+            if(deadline<current) deadline=current;
+            else std::this_thread::sleep_until(deadline);
+        } else deadline=std::chrono::steady_clock::now();
     }
     renderer.finish();
     std::cout << "Completed " << frames << " frames\n";

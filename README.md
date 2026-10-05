@@ -280,7 +280,7 @@ preview:render_sheet("/tmp/puff.png", { from = 0.9, to = 2, count = 6 })
 
 ![Swan's scene editor](docs/editor.png)
 
-The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets**, **Console**, **History**, **Timeline**, and **Effect** can be rearranged, tabbed, or closed (View menu reopens them; *View > Reset Layout* restores the default). The layout, recent files, camera speed, snapping, and UI size persist per user in `$XDG_CONFIG_HOME/swan` (`~/.config/swan`), or `$SWAN_CONFIG_HOME` when set — never in scene files.
+The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets**, **Console**, **History**, **Timeline**, and **Effect** can be rearranged, tabbed, or closed (View menu reopens them; *View > Reset Layout* restores the default). The layout, recent files, camera speed, snapping, UI size, and frame-rate limit persist per user in `$XDG_CONFIG_HOME/swan` (`~/.config/swan`), or `$SWAN_CONFIG_HOME` when set — never in scene files.
 
 **Editing is live.** Inspector drags, typed values, color pickers, and gizmo drags update the scene immediately as an uncommitted preview; releasing the widget commits exactly one undo step (*Move Crystal pedestal*, *Edit material gold*, ...). A drag that ends where it started, or a text edit cancelled with Esc, adds no history. Invalid intermediate values (e.g. a zero scale while typing) keep the last valid preview and are reported in the Console. There are no Apply buttons.
 
@@ -301,6 +301,7 @@ The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets
 | Animate | **I** keys the selection's transform at the playhead; **Auto Key** turns gizmo/Inspector edits into keys; drag keys to retime, right-click for ease/delete |
 | Effects | *Assets ▸ Effects ▸ New Effect*; drag an effect onto an entity; edit emitters (or full JSON) in the Effect panel; with nothing selected the Inspector edits the environment |
 | UI size, shortcuts | Ctrl+= / Ctrl+- / Ctrl+0; **F1** lists every shortcut |
+| Frame-rate limit | *View ▸ Frame Rate Limit* (default **60 FPS**; 30/120/144 or unlimited). Lower limits use less CPU/GPU; `--fps-limit N` overrides it for any run (0 = unlimited) |
 
 New, Open, Revert, Quit, and closing the window ask before discarding unsaved changes (**•** in the title bar). Gizmo rotation is yaw-only and scaling an entity that has children stays uniform, matching the scene's transform model. Play copies the authored scene and runs the garden game inside the viewport; Stop discards runtime changes, and editing is disabled while playing. Scenes without the garden's goal/collectible roles stay editable, but Play reports an error.
 

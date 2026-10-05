@@ -31,6 +31,8 @@ public:
     virtual bool running() const { return true; }
     // nullopt keeps the renderer's click-to-capture behavior; a value takes explicit control.
     virtual std::optional<bool> cursorCapture() const { return std::nullopt; }
+    // Frames per second the runtime should not exceed (0: unlimited, presentation/vsync only).
+    virtual int frameRateLimit() const { return 0; }
     // Log lines (e.g. from scripts) since the last call; the runtime prints them.
     virtual std::vector<std::string> takeMessages() { return {}; }
 };

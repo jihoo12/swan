@@ -9,6 +9,7 @@ struct EditorSettings {
     float cameraSpeed=6,uiScale=1;
     bool snap=false,showStats=true,showGrid=false;
     float snapTranslate=0.5f,snapRotate=15,snapScale=0.1f;
+    int fpsLimit=60;   // Editor frame-rate cap; 0 = unlimited (vsync only). Saves CPU/GPU when idle.
     void addRecent(const std::filesystem::path& scene);
     void removeRecent(const std::filesystem::path& scene);
 };

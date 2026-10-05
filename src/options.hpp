@@ -9,6 +9,7 @@ struct Options {
     bool verifyMeshUploads=false;
     bool x11=false;
     int frames=0;
+    int fpsLimit=-1;   // --fps-limit: overrides GameLayer::frameRateLimit() when >= 0 (0: unlimited).
     bool resizeTest=false,reloadTest=false;
     bool overview=false,thirdPerson=false;
     std::filesystem::path shaderDir,scenePath,exportPath,savePath;

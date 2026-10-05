@@ -27,6 +27,7 @@ public:
     bool allowClose() override;
     bool running() const override { return !quitting; }
     std::optional<bool> cursorCapture() const override;
+    int frameRateLimit() const override { return settings.fpsLimit; }
 private:
     enum class Level { Info, Success, Warning, Error };
     struct LogEntry { Level level; std::string text; double time; };

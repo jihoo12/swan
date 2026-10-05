@@ -266,6 +266,13 @@ void EditorLayer::drawMenuBar() {
     if(ImGui::BeginMenu("View")) {
         for(const char* id:{"view.hierarchy","view.inspector","view.assets","view.console","view.history","view.timeline","view.effect"}) actions.menuItem(id);
         ImGui::Separator();actions.menuItem("view.focus");actions.menuItem("view.frame-all");actions.menuItem("view.stats");actions.menuItem("view.grid");
+        if(ImGui::BeginMenu((std::string(icon::Gauge)+"  Frame Rate Limit").c_str())) {
+            for(int limit:{30,60,120,144,0}) {
+                auto label=limit?std::to_string(limit)+" FPS":std::string("Unlimited (vsync)");
+                if(ImGui::MenuItem(label.c_str(),nullptr,settings.fpsLimit==limit)) {settings.fpsLimit=limit;persistSettings();}
+            }
+            ImGui::EndMenu();
+        }
         ImGui::Separator();actions.menuItem("view.zoom-in");actions.menuItem("view.zoom-out");actions.menuItem("view.zoom-reset");
         ImGui::Separator();actions.menuItem("view.reset-layout");
         ImGui::EndMenu();

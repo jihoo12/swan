@@ -37,6 +37,11 @@ EditorSettings loadEditorSettings(const std::filesystem::path& file) {
     auto boolean=[&](const char* key,bool& value) {if(root.contains(key) && root[key].is_boolean()) value=root[key].get<bool>();};
     number("camera_speed",settings.cameraSpeed,0.5f,200);number("ui_scale",settings.uiScale,0.75f,2);
     number("snap_translate",settings.snapTranslate,0.01f,100);number("snap_rotate",settings.snapRotate,1,180);number("snap_scale",settings.snapScale,0.01f,10);
+    // 0 (unlimited) or 15..1000 frames per second.
+    if(root.contains("fps_limit") && root["fps_limit"].is_number_integer()) {
+        auto limit=root["fps_limit"].get<int64_t>();
+        settings.fpsLimit=limit<=0?0:int(std::clamp<int64_t>(limit,15,1000));
+    }
     boolean("snap",settings.snap);boolean("show_stats",settings.showStats);boolean("show_grid",settings.showGrid);
     if(root.contains("recent_scenes") && root["recent_scenes"].is_array())
         for(const auto& item:root["recent_scenes"]) if(item.is_string() && settings.recentScenes.size()<EditorSettings::maxRecent) settings.recentScenes.emplace_back(item.get<std::string>());
@@ -45,7 +50,7 @@ EditorSettings loadEditorSettings(const std::filesystem::path& file) {
 void saveEditorSettings(const std::filesystem::path& file,const EditorSettings& settings) {
     nlohmann::json root={{"camera_speed",settings.cameraSpeed},{"ui_scale",settings.uiScale},{"snap",settings.snap},
         {"snap_translate",settings.snapTranslate},{"snap_rotate",settings.snapRotate},{"snap_scale",settings.snapScale},
-        {"show_stats",settings.showStats},{"show_grid",settings.showGrid},{"recent_scenes",nlohmann::json::array()}};
+        {"show_stats",settings.showStats},{"show_grid",settings.showGrid},{"fps_limit",settings.fpsLimit},{"recent_scenes",nlohmann::json::array()}};
     for(const auto& path:settings.recentScenes) root["recent_scenes"].push_back(path.string());
     if(file.has_parent_path()) std::filesystem::create_directories(file.parent_path());
     auto temporary=file;temporary+=".tmp-"+std::to_string(getpid());
