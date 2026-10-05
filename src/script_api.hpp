@@ -9,7 +9,7 @@ namespace swan {
 // Installs the `swan` table: open/new/simulate/preview/validate, plus `swan.args` and
 // `swan.version`. With a renderer, Preview:render() and render_sheet() write PNG images.
 void bindScriptApi(ScriptEngine& engine,std::vector<std::string> args={},ImageRenderer renderer={});
-// Exposes an existing document (e.g. the editor's) as a global; the document must outlive the
+// Exposes an existing document (e.g. a host application's) as a global; the document must outlive the
 // engine. Every call is a validated EditorDocument command, so edits are undoable.
 void bindDocument(ScriptEngine& engine,const std::string& global,EditorDocument& document,std::filesystem::path path={});
 // `swan script FILE [ARGS...]`: run a trusted automation script without a window. Returns an exit

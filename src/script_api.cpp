@@ -1,5 +1,4 @@
 #include "script_api.hpp"
-#include "editor_view.hpp"
 #include "fx_capture.hpp"
 #include "fx_json.hpp"
 #include "image.hpp"
@@ -325,7 +324,7 @@ int bindTypes(lua_State* L) {
             if(!edits.empty()) doc.apply(edits,"Set "+label(e));
             return 0;});}},
         {"reparent",[](lua_State* L){return protect(L,[&]{
-            // Keeps the world placement, like hierarchy drag-and-drop in the editor.
+            // Keeps the world placement.
             auto& doc=document(L);auto key=lua::string(L,2,"key");
             std::optional<std::string> parent;if(!lua::none(L,3)) parent=lua::string(L,3,"parent");
             const auto& scene=doc.document().scene;

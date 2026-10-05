@@ -144,7 +144,7 @@ function game.spawn(spec) end
 function game.effect(id, options) end
 
 -------------------------------------------------------------------------------------------------
--- Automation (`swan script FILE`, the editor's Lua console)
+-- Automation (`swan script FILE`)
 -------------------------------------------------------------------------------------------------
 
 ---Snapshot of an entity (a plain table; edit through Document methods).
@@ -288,7 +288,7 @@ function game.effect(id, options) end
 ---@field bloom_threshold? number
 ---@field tonemap? "reinhard"|"aces"
 
----A scene being edited. Every call is a validated, undoable editor command.
+---A scene being edited. Every call is a validated, undoable document command.
 ---@class Document
 ---@field path string
 ---@field modified boolean
@@ -530,7 +530,3 @@ function swan.simulate(scene, options) end
 ---@param options? {seed?: integer, scripts?: boolean}
 ---@return Preview
 function swan.preview(scene, options) end
-
----The editor console's live document (only defined in the editor's Lua console).
----@type Document
-doc = nil

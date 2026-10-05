@@ -3,7 +3,6 @@
 // simulation, particle effects and timelines, and Lua scripting. Link swan::headless
 // (find_package(swan CONFIG)).
 #include "editor_document.hpp"
-#include "editor_view.hpp"
 #include "fx_capture.hpp"
 #include "fx_io.hpp"
 #include "fx_player.hpp"

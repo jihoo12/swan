@@ -16,9 +16,6 @@ public:
     VulkanRenderer(const VulkanRenderer&) = delete;
     VulkanRenderer& operator=(const VulkanRenderer&) = delete;
     Input pollInput();
-    void beginGui();
-    bool hasGui() const { return guiContext; }
-    GuiFrame guiFrame(float deltaTime,float fps) const;
     bool shouldClose() const;
     void cancelClose();
     void setCursorCaptured(bool enabled);
@@ -31,20 +28,14 @@ public:
     TextureData renderImage(const RenderFrame& frame,glm::uvec2 size);
 private:
     void initialize();
-    void initializeGui();
-    void initializeGuiVulkan();
-    void shutdownGui();
-    bool guiContext=false,guiGlfw=false,guiVulkan=false;
-    // Offscreen scene image sampled by the GUI viewport; resized between frames, never mid-frame.
+    // Headless color target read back by renderImage().
     struct SceneTarget {
         VkExtent2D extent{};
         VkImage color=VK_NULL_HANDLE;
         VkDeviceMemory colorMemory=VK_NULL_HANDLE;
         VkImageView colorView=VK_NULL_HANDLE;
-        VkDescriptorSet texture=VK_NULL_HANDLE;
     };
     SceneTarget sceneTarget;
-    VkExtent2D requestedTarget{};
     void createSceneTarget(VkExtent2D extent);
     void destroySceneTarget();
     VkImage createImage(VkExtent2D size,VkFormat imageFormat,VkImageUsageFlags usage,VkImageAspectFlags aspect,VkDeviceMemory& memory,VkImageView& view);

@@ -13,7 +13,7 @@ contains a campfire, a portal, and an orb that flies out of the portal and explo
 ## The authoring loop
 
 1. **Author** effects, the timeline, and the environment with the Lua automation API (`swan
-   script`) or by editing the scene JSON. Every Lua call is a validated, undoable editor command,
+   script`) or by editing the scene JSON. Every Lua call is a validated, undoable document command,
    and invalid input names the offending emitter and field.
 2. **Measure** with `swan.preview(doc)`: seek to any time and read particle counts, spawn/drop
    totals, and world bounds per emitter. This needs no GPU and returns the same numbers on every
@@ -51,36 +51,6 @@ doc:save("/tmp/sparks.swan.json")
 ./build/swan render /tmp/sparks.swan.json --stats-only --sequence /tmp/x --fps 10   # numbers only, no GPU
 ./build/swan --scene /tmp/sparks.swan.json --overview   # watch it live (effects loop with the timeline)
 ```
-
-## In the editor
-
-![Editing effects and a timeline in the Swan editor](editor-fx.png)
-
-`swan editor assets/scenes/fx-showcase.swan.json` has the same model with live feedback:
-
-- **Timeline panel** (next to Assets and Console). Play/pause the effect preview with **Space**
-  and rewind with **Shift+Space**. You can scrub on the ruler, loop the preview, and view through
-  the shot camera (clapperboard button). Rows show camera, track, and event keys: drag a key to
-  retime it (snapped to ticks, Shift for free), and right-click it for ease or delete. The trash
-  button removes a row, and *Length*/*Loop* set the authored timeline.
-- **Keys**: **I** (or *Key ▸ Transform*) keys the selection's position, rotation, and scale at
-  the playhead, and *Key ▸ Viewport camera* records the current view as a shot-camera key. With
-  **Auto Key** on, gizmo and Inspector transform edits become keys at the playhead (one undo step
-  per drag).
-- **Events**: *Event ▸ effect* adds a one-shot effect at the playhead, following the selection or
-  at the origin.
-- **Effects**: in the *Assets ▸ Effects* tab, *New Effect* creates a starter effect, attached to
-  the selection if there is one. Click a tile to edit it, drag it onto an entity (or double-click)
-  to attach it. The **Effect** panel edits each emitter's common fields live, previews its
-  over-life curves, and exposes the full JSON (*Apply JSON* validates it and reports the field at
-  fault). The Inspector's *Effect* section attaches or swaps an entity's effect.
-- **Environment**: with nothing selected, the Inspector edits the scene environment (background,
-  fog, lighting, exposure, bloom, tone map).
-
-While the preview plays or the playhead is past 0, the viewport shows a deterministic `FxPlayer`
-of the document, the same simulation `swan.preview` and `swan render` use. Every edit rebuilds it
-at the same time. Animated entities appear at their timeline pose, and the gizmo follows them.
-Every change is an undoable editor command and appears in History.
 
 ## Concepts
 
@@ -196,7 +166,7 @@ first and last keys.
   cycle. Event effects removed from the scene are skipped.
 - The camera tracks are independent: `position` and `target` (look-at) are vector curves, `fov`
   is in degrees. Without a camera, previews frame the effect sources automatically.
-- Deleting an entity in the editor or through Lua also removes its tracks and events. Deleting an
+- Deleting an entity through Lua also removes its tracks and events. Deleting an
   effect detaches it and removes its events. Both are undoable.
 
 ## Environment reference
@@ -221,7 +191,7 @@ first and last keys.
 
 Full types are in `lua/types/swan.lua`, which LuaLS uses for completion and checking.
 
-**Document** (`swan.open`, `swan.new`, the editor console's `doc`):
+**Document** (`swan.open`, `swan.new`):
 `effects()`, `effect(id)`, `set_effect(id, spec)`, `delete_effect(id)`, `timeline()`,
 `set_timeline(spec|nil)`, `set_track{entity|material|environment, property, keys}` (no keys
 removes it), `add_event{time, effect, entity?, position?, yaw?, seed?}`, `set_camera{position,

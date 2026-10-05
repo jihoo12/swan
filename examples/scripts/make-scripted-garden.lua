@@ -1,5 +1,5 @@
 -- Builds assets/scenes/scripted-garden.swan.json from the glTF garden, entirely through the
--- editor command API. Run: swan script examples/scripts/make-scripted-garden.lua
+-- document command API. Run: swan script examples/scripts/make-scripted-garden.lua
 local doc = swan.open("assets/scenes/gltf-garden.swan.json")
 
 doc:transaction("Add behaviours", function()

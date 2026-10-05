@@ -14,7 +14,6 @@ void Engine::run(GameLayer& game) {
     float fps=0;
     auto deadline=std::chrono::steady_clock::now();
     std::cout << "Scene: " << game.renderFrame(1).objects.size() << " render objects\n";
-    if(renderer.hasGui()) game.initializeGui();
     while(game.running() && (!options.frames || frames<options.frames)) {
         Input input=renderer.pollInput();
         if(renderer.shouldClose()) {
@@ -24,9 +23,7 @@ void Engine::run(GameLayer& game) {
         auto now=std::chrono::steady_clock::now();
         double elapsed=std::chrono::duration<double>(now-previous).count(); previous=now;
         if(options.reloadTest && (frames==10 || frames==30)) input.reload=true;
-        renderer.beginGui();
         game.handleInput(input);
-        game.drawGui(renderer.guiFrame(float(elapsed),fps));
         if(auto capture=game.cursorCapture()) renderer.setCursorCaptured(*capture);
         clock.advance(elapsed,[&](float dt){game.fixedUpdate(dt,input);});
         renderer.draw(game.renderFrame(float(clock.remainder()/FixedStep::interval)));

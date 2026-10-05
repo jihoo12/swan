@@ -1,8 +1,6 @@
 #include "renderer.hpp"
 #include "key_bindings.hpp"
 #include "resources.hpp"
-#include <imgui.h>
-#include <imgui_impl_vulkan.h>
 #include "visibility.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -27,6 +25,25 @@ VkImageMemoryBarrier barrier(VkImage image,VkImageAspectFlags aspect,VkImageLayo
     b.srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED; b.dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED;
     b.image=image; b.subresourceRange={aspect,0,1,0,1}; return b;
 }
+// Hardware first; a software rasterizer (lavapipe) is chosen only when nothing else qualifies.
+int deviceScore(VkPhysicalDeviceType type) {
+    switch(type) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return 100;
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return 50;
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return 20;
+    case VK_PHYSICAL_DEVICE_TYPE_CPU: return 1;
+    default: return 10;
+    }
+}
+const char* deviceTypeName(VkPhysicalDeviceType type) {
+    switch(type) {
+    case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return "discrete";
+    case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "integrated";
+    case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return "virtual";
+    case VK_PHYSICAL_DEVICE_TYPE_CPU: return "cpu";
+    default: return "other";
+    }
+}
 }
 VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT severity,VkDebugUtilsMessageTypeFlagsEXT,const VkDebugUtilsMessengerCallbackDataEXT* data,void* user) {
     if(severity>=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) std::cerr << "Vulkan: " << data->pMessage << '\n';
@@ -40,7 +57,7 @@ void VulkanRenderer::initialize() {
     if(!options.headless) {
     glfwSetErrorCallback([](int code,const char* text){ std::cerr << "GLFW " << code << ": " << text << '\n'; });
     if(options.x11) glfwInitHint(GLFW_PLATFORM,GLFW_PLATFORM_X11);
-    if(!glfwInit()) throw std::runtime_error("Cannot initialize GLFW. Run inside a graphical desktop or Xvfb.");
+    if(!glfwInit()) throw std::runtime_error("Cannot initialize GLFW. Run inside a graphical desktop, or use swan render/script for windowless work.");
     if(!glfwVulkanSupported()) throw std::runtime_error("Vulkan loader/driver unavailable. Check vulkaninfo --summary.");
     glfwWindowHint(GLFW_CLIENT_API,GLFW_NO_API);
     window=glfwCreateWindow(1280,800,"SWAN",nullptr,nullptr);
@@ -49,18 +66,16 @@ void VulkanRenderer::initialize() {
     glfwSetKeyCallback(window,[](GLFWwindow* w,int key,int,int action,int modifiers){
         auto& e=*static_cast<VulkanRenderer*>(glfwGetWindowUserPointer(w));
         if(action!=GLFW_PRESS) return;
-        // Editors own Escape (deselect, release capture); games use it to release or quit.
-        if(key==GLFW_KEY_ESCAPE && !e.options.editor) {
+        // Escape releases a captured cursor, otherwise quits.
+        if(key==GLFW_KEY_ESCAPE) {
             if(e.captured) { e.captured=false; glfwSetInputMode(w,GLFW_CURSOR,GLFW_CURSOR_NORMAL); }
             else glfwSetWindowShouldClose(w,GLFW_TRUE);
         }
-        if(e.guiContext && ImGui::GetIO().WantCaptureKeyboard && !e.captured) return;
         applyActionKey(e.input,key,action,modifiers);
     });
     glfwSetMouseButtonCallback(window,[](GLFWwindow* w,int button,int action,int){
         auto& e=*static_cast<VulkanRenderer*>(glfwGetWindowUserPointer(w));
-        // Editor layers request capture explicitly through setCursorCaptured().
-        if(!e.options.editor && button==GLFW_MOUSE_BUTTON_LEFT && action==GLFW_PRESS && (!e.guiContext || !ImGui::GetIO().WantCaptureMouse)) {
+        if(button==GLFW_MOUSE_BUTTON_LEFT && action==GLFW_PRESS) {
             e.captured=true; glfwGetCursorPos(w,&e.lastX,&e.lastY); glfwSetInputMode(w,GLFW_CURSOR,GLFW_CURSOR_DISABLED);
         }
     });
@@ -79,7 +94,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,17,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,18,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -110,18 +125,19 @@ void VulkanRenderer::initialize() {
         std::vector<VkQueueFamilyProperties> qs(qn); vkGetPhysicalDeviceQueueFamilyProperties(candidate,&qn,qs.data());
         for(uint32_t q=0;q<qn;++q) {
             VkBool32 present=options.headless; if(!options.headless) check(vkGetPhysicalDeviceSurfaceSupportKHR(candidate,q,surface,&present),"Surface support");
-            int score=props.deviceType==VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU?100:10;
+            int score=deviceScore(props.deviceType);
             if(present && (qs[q].queueFlags&VK_QUEUE_GRAPHICS_BIT) && score>best) { gpu=candidate; family=q; best=score; }
         }
     }
     if(!gpu) throw std::runtime_error("No Vulkan 1.3 GPU with dynamic rendering and graphics/present queue");
     // Headless runs keep stdout for their own output (e.g. JSON statistics).
-    VkPhysicalDeviceProperties props; vkGetPhysicalDeviceProperties(gpu,&props); (options.headless?std::cerr:std::cout) << "GPU: " << props.deviceName << '\n';
+    VkPhysicalDeviceProperties props; vkGetPhysicalDeviceProperties(gpu,&props);
+    (options.headless?std::cerr:std::cout) << "GPU: " << props.deviceName << " (" << deviceTypeName(props.deviceType) << ")\n";
     float priority=1;
     VkDeviceQueueCreateInfo qi{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO}; qi.queueFamilyIndex=family; qi.queueCount=1; qi.pQueuePriorities=&priority;
     VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES}; f13.dynamicRendering=true;
-    const char* deviceExtensions[]={VK_KHR_SWAPCHAIN_EXTENSION_NAME,VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME};
-    VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO}; di.pNext=&f13; di.queueCreateInfoCount=1; di.pQueueCreateInfos=&qi; di.enabledExtensionCount=options.headless?0:options.editor?2:1; di.ppEnabledExtensionNames=deviceExtensions;
+    const char* deviceExtensions[]={VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    VkDeviceCreateInfo di{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO}; di.pNext=&f13; di.queueCreateInfoCount=1; di.pQueueCreateInfos=&qi; di.enabledExtensionCount=options.headless?0:1; di.ppEnabledExtensionNames=deviceExtensions;
     check(vkCreateDevice(gpu,&di,nullptr,&device),"Create device"); vkGetDeviceQueue(device,family,0,&queue);
     for(auto candidate:{VK_FORMAT_D32_SFLOAT,VK_FORMAT_D24_UNORM_S8_UINT,VK_FORMAT_D16_UNORM}) {
         VkFormatProperties p; vkGetPhysicalDeviceFormatProperties(gpu,candidate,&p);
@@ -143,8 +159,6 @@ void VulkanRenderer::initialize() {
         if(!(p.optimalTilingFeatures&VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT)) throw std::runtime_error("GPU lacks blendable RGBA8 render targets");
     } else createSwapchain();
     createPipeline();
-    if(options.editor) initializeGui();
-
 }
 uint32_t VulkanRenderer::memoryType(uint32_t mask,VkMemoryPropertyFlags flags) {
     VkPhysicalDeviceMemoryProperties p; vkGetPhysicalDeviceMemoryProperties(gpu,&p);
@@ -156,8 +170,7 @@ void VulkanRenderer::createSwapchain() {
     uint32_t n=0; check(vkGetPhysicalDeviceSurfaceFormatsKHR(gpu,surface,&n,nullptr),"Surface formats");
     if(!n) throw std::runtime_error("No surface formats");
     std::vector<VkSurfaceFormatKHR> formats(n); check(vkGetPhysicalDeviceSurfaceFormatsKHR(gpu,surface,&n,formats.data()),"Surface formats");
-    // Prefer a UNORM surface and encode sRGB in the scene shader: Dear ImGui colors are authored
-    // in sRGB, so a hardware-sRGB surface would encode them twice and wash out the editor theme.
+    // Prefer a UNORM surface and encode sRGB in the composite shader, like the headless RGBA8 targets.
     auto selected=formats[0];
     bool found=false;
     for(auto wanted:{VK_FORMAT_B8G8R8A8_UNORM,VK_FORMAT_R8G8B8A8_UNORM,VK_FORMAT_B8G8R8A8_SRGB,VK_FORMAT_R8G8B8A8_SRGB}) {
@@ -268,12 +281,7 @@ void VulkanRenderer::rebuild() {
     while((w==0 || h==0) && !glfwWindowShouldClose(window)) { glfwWaitEvents(); glfwGetFramebufferSize(window,&w,&h); }
     if(glfwWindowShouldClose(window)) return;
     check(vkDeviceWaitIdle(device),"Wait before resize");
-    auto previousFormat=format;
     destroySwapchain(); createSwapchain(); createPipeline();
-    // The GUI pipeline depends only on the color format; keep it (and registered textures) otherwise.
-    if(guiVulkan && format!=previousFormat) {
-        destroySceneTarget(); ImGui_ImplVulkan_Shutdown(); guiVulkan=false; initializeGuiVulkan();
-    }
 }
 Input VulkanRenderer::pollInput() {
     glfwPollEvents();
@@ -289,11 +297,6 @@ Input VulkanRenderer::pollInput() {
     input.sprint=pressed(GLFW_KEY_LEFT_SHIFT);
     Input result=input;
     input.look={}; input.jump=false; input.pause=false; input.reset=false; input.toggleFlight=false; input.interact=false; input.reload=false; input.save=false; input.toggleCamera=false;
-    // A captured cursor belongs to the application, even while the GUI is hovered or focused.
-    if(guiContext && !captured) {
-        if(ImGui::GetIO().WantCaptureKeyboard) {result.move={};result.vertical=0;result.sprint=false;result.jump=false;result.pause=false;result.reset=false;result.toggleFlight=false;result.toggleCamera=false;result.interact=false;result.reload=false;result.save=false;}
-        if(ImGui::GetIO().WantCaptureMouse) result.look={};
-    }
     return result;
 }
 bool VulkanRenderer::shouldClose() const { return glfwWindowShouldClose(window); }
@@ -389,8 +392,6 @@ void VulkanRenderer::recordScene(const RenderFrame& frame,VkImageView output,VkE
     recordPost(frame,output,size);
 }
 void VulkanRenderer::draw(const RenderFrame& frame) {
-    if(guiContext) ImGui::Render();
-    requestedTarget={frame.targetSize.x,frame.targetSize.y};
     check(vkWaitForFences(device,1,&fence,true,UINT64_MAX),"Wait frame");
     int w,h; glfwGetFramebufferSize(window,&w,&h);
     if(w==0 || h==0 || uint32_t(w)!=extent.width || uint32_t(h)!=extent.height) { rebuild(); return; }
@@ -406,30 +407,7 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
     auto colorBarrier=barrier(images[index],VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,0,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
     // Match the acquire semaphore wait stage so the layout transition waits for presentation.
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,nullptr,0,nullptr,1,&colorBarrier);
-    bool offscreen=frame.targetSize.x && frame.targetSize.y && sceneTarget.texture;
-    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}; color.imageView=views[index]; color.imageLayout=VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; color.loadOp=VK_ATTACHMENT_LOAD_OP_CLEAR; color.storeOp=VK_ATTACHMENT_STORE_OP_STORE; color.clearValue.color={{0.035f,0.065f,0.095f,1}};
-    VkRenderingInfo render{VK_STRUCTURE_TYPE_RENDERING_INFO}; render.renderArea={{0,0},extent}; render.layerCount=1; render.colorAttachmentCount=1; render.pColorAttachments=&color;
-    if(offscreen) {
-        // The previous frame's GUI sampling finished at the frame fence; discard and redraw the image.
-        auto targetColor=barrier(sceneTarget.color,VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,0,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,nullptr,0,nullptr,1,&targetColor);
-        recordScene(frame,sceneTarget.colorView,sceneTarget.extent);
-        auto sampled=barrier(sceneTarget.color,VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_ACCESS_SHADER_READ_BIT);
-        vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,0,0,nullptr,0,nullptr,1,&sampled);
-        color.clearValue.color={{0.06f,0.06f,0.07f,1}};
-    } else {
-        recordScene(frame,views[index],extent);
-        if(guiVulkan) {
-            auto guiBarrier=barrier(images[index],VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,VK_ACCESS_COLOR_ATTACHMENT_READ_BIT|VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
-            vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,0,0,nullptr,0,nullptr,1,&guiBarrier);
-            color.loadOp=VK_ATTACHMENT_LOAD_OP_LOAD;
-        }
-    }
-    if(guiVulkan) {
-        vkCmdBeginRendering(command,&render);
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),command);
-        vkCmdEndRendering(command);
-    }
+    recordScene(frame,views[index],extent);
     auto presentBarrier=barrier(images[index],VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,0);
     vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,0,0,nullptr,0,nullptr,1,&presentBarrier);
     check(vkEndCommandBuffer(command),"End command");
@@ -443,7 +421,7 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
 }
 void VulkanRenderer::cleanup() {
     if(device) {
-        vkDeviceWaitIdle(device); destroySceneTarget(); shutdownGui(); destroySwapchain(); releaseParticles(); releaseReadback(); destroyPostTargets();
+        vkDeviceWaitIdle(device); destroySceneTarget(); destroySwapchain(); releaseParticles(); releaseReadback(); destroyPostTargets();
         if(postLayout) vkDestroyPipelineLayout(device,postLayout,nullptr);
         if(postSampler) vkDestroySampler(device,postSampler,nullptr);
         if(postPool) vkDestroyDescriptorPool(device,postPool,nullptr);

@@ -17,13 +17,11 @@ static_assert(sizeof(ParticleVertex)==64);
 // Particles sharing a blend mode and texture. Alpha-blended particles are sorted far to near
 // by the renderer; additive ones are order-independent.
 struct ParticleBatch { ParticleBlend blend=ParticleBlend::Additive; SharedTexture texture=whiteTexture(); std::vector<ParticleVertex> particles; };
-// A nonzero targetSize renders the scene into an offscreen image (shown by the GUI) instead of the window.
 struct RenderFrame {
     Camera camera;
     std::vector<RenderObject> objects;
     std::vector<ParticleBatch> particles;
     Environment environment;
     float time=0;
-    glm::uvec2 targetSize{};
 };
 }

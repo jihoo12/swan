@@ -6,7 +6,7 @@
 int main(int argc,char** argv) {
     try {
         std::filesystem::path scene=argc>1?argv[1]:SWAN_SCENES "/scripted-garden.swan.json";
-        // 1. Authoring: transactional edits with undo, exactly what the editor uses.
+        // 1. Authoring: transactional edits with undo, the same commands Lua scripts use.
         swan::EditorDocument document(swan::loadScene(scene));
         swan::Entity marker;marker.key="marker";marker.name="Marker";marker.transform.position={0,3,0};
         document.apply(swan::CreateEntity{marker,{}});

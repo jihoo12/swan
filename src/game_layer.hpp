@@ -6,21 +6,10 @@
 #include <string>
 #include <vector>
 namespace swan {
-// Per-frame data the runtime hands to GUI layers. sceneTexture is an ImTextureID for the
-// renderer-owned image of the previous offscreen scene render (0 until one exists).
-struct GuiFrame {
-    uint64_t sceneTexture=0;
-    glm::uvec2 sceneSize{};
-    float deltaTime=0,fps=0,contentScale=1;
-    uint64_t visibleObjects=0,culledObjects=0;
-};
 // Implement this interface to build another game with the same engine runtime.
 class GameLayer {
 public:
     virtual ~GameLayer() = default;
-    // Called once after the GUI context exists and before the first GUI frame.
-    virtual void initializeGui() {}
-    virtual void drawGui(const GuiFrame&) {}
     virtual void handleInput(const Input& input) = 0;
     virtual void fixedUpdate(float dt,const Input& input) = 0;
     virtual RenderFrame renderFrame(float interpolation) const = 0;

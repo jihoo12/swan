@@ -1,6 +1,6 @@
 # Swan
 
-Swan is a small C++20 / Vulkan 1.3 3D game engine with a docking scene editor, Lua scripting, a headless C++ SDK, and FX animation: particle effects, keyframed timelines, and HDR bloom that can be authored, measured, and rendered entirely without a window (see [the FX guide](docs/FX.md)). Version 0.16 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
+Swan is a small C++20 / Vulkan 1.3 3D game engine with Lua scripting, a headless C++ SDK, and FX animation: particle effects, keyframed timelines, and HDR bloom that can be authored, measured, and rendered entirely without a window (see [the FX guide](docs/FX.md)). Version 0.16 separates the engine runtime, CPU scene/physics code, GPU renderer, and a sample game, **The Quiet Garden**. Walk around a procedural ruined courtyard, collect five golden light shards, and restore its hovering crystal. Scenes can be exported, validated, loaded from JSON, and reloaded while the game runs. Triangle OBJ meshes with UVs and PNG textures are imported as shared CPU assets and rendered using cached Vulkan buffers, images, and descriptors. The default garden is procedural; the OBJ example ships a locally authored crystal.
 
 ![The Quiet Garden rendered by Swan](docs/garden.png)
 
@@ -21,7 +21,7 @@ The game starts in walking mode. Click to look around, walk toward a golden shar
 ./build/swan --overview
 ```
 
-`--overview` starts with the original elevated camera in flight mode. GLFW selects the desktop backend automatically; `--x11` forces X11. The automated smoke test uses X11 inside Xvfb, including when launched from a Wayland desktop.
+`--overview` starts with the original elevated camera in flight mode. GLFW selects the desktop backend automatically; `--x11` forces X11.
 
 `path:.` includes new files before Git tracking. After tracking all project files, plain `nix develop` works too. `flake.lock` pins nixpkgs. Local build output is excluded from package sources.
 
@@ -32,13 +32,7 @@ nix build path:.
 ./result/bin/swan
 ```
 
-To open the editor straight from the flake (no checkout build needed):
-
-```sh
-nix run path:.#editor -- assets/scenes/gltf-garden.swan.json
-```
-
-SPIR-V shaders and editor fonts are installed alongside the executable. Shader lookup uses the installed executable's location, then the CMake build directory. `--shader-dir PATH` overrides it.
+SPIR-V shaders are installed alongside the executable. Shader lookup uses the installed executable's location, then the CMake build directory. `--shader-dir PATH` overrides it.
 
 ## Scene files and material assets
 
@@ -115,8 +109,8 @@ To implement another game, derive from `GameLayer` and implement `handleInput`, 
 - Swapchain/depth recreation on resize and waiting while minimized.
 - One frame in flight, one frame fence, one acquire semaphore, and a presentation semaphore per swapchain image; shared depth use remains serialized.
 - Optional Khronos validation with runtime errors producing a nonzero exit status.
-- The window surface prefers a UNORM format; the scene shader encodes sRGB itself (a specialization constant), so Dear ImGui's sRGB-authored colors are not encoded twice. Hardware-sRGB surfaces remain supported.
-- In the editor, the scene renders into an offscreen color/depth target sized to the Viewport panel, then the GUI samples it. The target is resized between frames, after the frame fence.
+- The window surface prefers a UNORM format and the composite shader encodes sRGB itself, matching the headless RGBA8 targets. Hardware-sRGB surfaces remain supported.
+- Device selection prefers discrete, then integrated GPUs; a CPU rasterizer such as Lavapipe is used only when no hardware device qualifies. Startup prints the chosen device and its type.
 - Upright capsule against static boxes rotated around the vertical axis. Movement is subdivided and contacts iteratively resolved, including floor, ceiling, and wall sliding. Imported meshes use a box proxy derived from their local bounds, transformed by the entity scale and yaw.
 
 This is an early engine foundation. Collision is a character controller, not a general rigid-body simulator; it has no dynamic bodies, arbitrary mesh collision, or automatic stair climbing. OBJ import currently requires triangles and supports positions plus optional normals. Missing normals use flat shading; UVs are retained, with OBJ V coordinates flipped to match PNG rows. Vertex colors, smoothing groups, and OBJ/MTL materials do not affect rendering. PNG base-color textures are supported; alpha is currently ignored and all geometry remains opaque. There is no glTF material import, skeletal animation, audio, shadow mapping, or bloom yet. The crystal's emission changes its surface color without a bloom pass. These systems can be added on top of the existing scene/game/renderer boundaries.
@@ -131,13 +125,13 @@ ctest --test-dir build --output-on-failure
 ./build/swan --validation --frames 90 --resize-test
 ```
 
-For automated rendering without a desktop or hardware GPU:
+For the full rendering smoke test, run from a graphical session (Wayland or X11) on a machine with a hardware Vulkan driver:
 
 ```sh
 nix develop path:. --command bash scripts/smoke-test.sh
 ```
 
-The smoke test first exports and validates a scene without a window, then uses Xvfb and Mesa Lavapipe, enables synchronization validation, renders 90 frames, and resizes the window twice. It checks walking, overview, exported-scene, hand-authored example, and imported-mesh modes. The mesh and textured cases reload and resize twice to exercise GPU resource replacement, and exports/validates relative mesh paths. The console reports uploads and resident GPU meshes/textures. To test installed shader lookup too:
+The smoke test renders on the hardware GPU and fails if any run reports a CPU rasterizer. It first exports and validates scenes without a window, then opens short-lived windows on the desktop with synchronization validation, renders 90 frames, and resizes the window twice; headless `swan render` and `swan script` captures run on the same GPU without a display. It checks walking, overview, exported-scene, hand-authored example, and imported-mesh modes. The mesh and textured cases reload and resize twice to exercise GPU resource replacement, and exports/validates relative mesh paths. The console reports uploads and resident GPU meshes/textures. To test installed shader lookup too:
 
 ```sh
 nix build path:.
@@ -146,12 +140,7 @@ nix develop path:. --command bash scripts/smoke-test.sh ./result/bin/swan
 
 CPU tests cover entity deletion/reuse and invalid creation, procedural scene invariants, capsule floor/wall/ceiling contacts and rotated walls, equivalent movement at 60/144 display frames per second, jump/landing, pause, collection/completion, mode switching, and bounded simulation catch-up. Persistence tests cover deterministic round trips, schema/asset errors, invalid-save preservation, authored exports after gameplay, and failed/successful reloads. Mesh tests cover OBJ index validation, supplied/generated normals, vertex sharing, negative indices, degenerate/untriangulated faces, path rebasing, failed reloads, and collision bounds. Texture tests cover PNG decoding, sharing, corrupt-file rejection, material tiling, path persistence, failed/successful reloads, OBJ UV conversion, and UV seams. All five bundled examples have headless command-line validation tests. The tests use explicit checks in release builds.
 
-```sh
-nix flake check path:.
-./build/swan --help
-```
-
-`nix flake check` builds the package and runs every CPU test executable plus the headless example validations. Graphical smoke tests and the editor GUI test are separate.
+Day-to-day development uses the incremental CMake build above. `nix flake check` rebuilds everything from scratch, so it runs in CI instead (`.github/workflows/check.yml`, on pushes to `main` and pull requests): it builds the package with every CPU test, builds the out-of-tree SDK example against the installed package, and type-checks the bundled Lua scripts. The graphical smoke test stays local because CI runners have no GPU.
 
 ## Layout
 
@@ -170,24 +159,20 @@ nix flake check path:.
 | `src/game.*`, `src/garden.*` | Sample gameplay and procedural content |
 | `src/renderer.*`, `src/renderer_texture.cpp` | GLFW and Vulkan buffers/images/descriptors |
 | `shaders/scene.vert`, `shaders/scene.frag` | Geometry, transforms, lighting, fog |
-| `src/renderer_gui.cpp`, `src/renderer_target.cpp` | Dear ImGui backend and the offscreen editor viewport target |
-| `src/editor_document.*`, `src/editor_view.*`, `src/editor_camera.*` | CPU editor core: transactions/previews, picking and gizmo math, navigation |
-| `src/editor_settings.*`, `src/fuzzy.*`, `src/resources.*` | Per-user preferences, palette ranking, installed resource lookup |
-| `src/editor_layer.*` | Editor frame, menus, toolbar, status bar, dock layout, actions, operations |
-| `src/editor_{hierarchy,inspector,viewport,panels}.cpp` | Editor panels (Assets, Console, and History live in `editor_panels.cpp`) |
-| `src/editor_{actions,file_dialog,theme,probe}.*`, `src/editor_icons.hpp` | Action registry and palette, scene browser, theme/fonts, GUI test probe |
+| `src/editor_document.*`, `src/scene_edit_main.cpp` | Transactional scene document (previews, batches, undo/redo) and the `swan-scene` batch editor |
+| `src/resources.*` | Installed resource lookup |
 | `src/script_engine.*`, `src/script_lua.*` | Lua 5.4 VM (sandbox, memory cap, instruction budget) and C API binding helpers |
 | `src/script_runtime.*`, `assets/scripts/` | Per-entity behaviour scripts in play, and sample behaviours |
-| `src/simulation.*`, `src/script_api.*`, `src/swan.hpp` | Headless C++ SDK and the Lua automation API (`swan script`, editor console) |
+| `src/simulation.*`, `src/script_api.*`, `src/swan.hpp` | Headless C++ SDK and the Lua automation API (`swan script`) |
 | `src/fx.*`, `src/timeline.*`, `src/fx_io.*`, `src/fx_runtime.*` | Effect and timeline data, JSON schema, deterministic particle/timeline runtime |
 | `src/fx_player.*`, `src/fx_capture.*`, `src/image.*`, `src/render_command.*` | Headless FX preview, frame/contact-sheet capture, PNG helpers, `swan render` |
-| `src/renderer_{particles,post,offscreen}.cpp`, `shaders/{particle,post}.*` | Particle billboards, HDR bloom/tone-map, windowless rendering and readback |
+| `src/renderer_{particles,post,offscreen,target}.cpp`, `shaders/{particle,post}.*` | Particle billboards, HDR bloom/tone-map, windowless rendering and readback |
 | `lua/types/`, `.luarc.json`, `examples/` | LuaLS type definitions, automation scripts, an out-of-tree C++ SDK consumer |
-| `tests/`, `scripts/smoke-test.sh`, `scripts/editor-ui-test.sh` | CPU, graphical, and real-input editor verification |
+| `tests/`, `scripts/smoke-test.sh` | CPU tests and hardware-GPU rendering verification |
 
 ## Driver troubleshooting
 
-`vulkaninfo --summary` should list a working device. On NixOS, enable graphics support in the system configuration; hardware drivers remain a system responsibility. On other Linux distributions, use the host Vulkan driver setup; a NixGL wrapper may be needed. The smoke test selects its own software driver.
+`vulkaninfo --summary` should list a working device. On NixOS, enable graphics support in the system configuration; hardware drivers remain a system responsibility. On other Linux distributions, use the host Vulkan driver setup; a NixGL wrapper may be needed. If startup reports a `(cpu)` device, the hardware driver is not visible to the Vulkan loader.
 
 ## References
 
@@ -219,17 +204,17 @@ Version 0.11 adds third-person play. Run `./build/swan --third-person` and press
 
 The reusable `ThirdPersonRig` computes a follow camera from an aim and target, pulling the boom inward against static mesh bounding-box proxies. The expanded-box sweep is conservative, includes rotated and parented colliders, and collapses the boom if its target is already inside a collider. It has no spring smoothing, shoulder offset, or exact mesh collision yet. Rendering follows the interpolated player target.
 
-See [the feature roadmap](docs/ROADMAP.md) for the planned sequence: third-person play, static glTF import, a minimal GUI editor, then clip/skeletal animation and FX. The editor can arrive before those later systems; its authored-scene commands and runtime play copy form the integration boundary.
+See [the feature roadmap](docs/ROADMAP.md) for the planned sequence. Authoring goes through the scriptable document API and the headless SDK; version 0.18 removed the GUI editor.
 
 Version 0.12 introduces an [Assimp-backed](https://github.com/assimp/assimp) static glTF/GLB geometry importer. Run `./build/swan --third-person --scene assets/scenes/gltf-garden.swan.json`. The authored model includes nested quaternion rotation, nonuniform scaling, and a mirrored instance; node matrices are baked into separate engine-owned mesh parts, with inverse-transpose normals and corrected mirrored winding. UV0, indexed triangles, bounds, shared uploads, export, and reload use the existing engine asset pipeline.
 
-This first importer deliberately handles **static geometry**. Scene materials/PNG references supply appearance; glTF PBR materials, embedded textures, cameras/lights, additional UV sets, and vertex colors are not imported. Animation, skins, morph targets, nontriangle geometry, and singular/nonaffine transforms are rejected. Imported model nodes are baked, not editable runtime scene nodes. Full matrix/quaternion runtime transforms and material import remain the next glTF integration work before the minimal editor milestone. Source files are limited to 32 MiB; decoded geometry is checked after Assimp parsing for 256 node primitives and one million triangle corners.
+This first importer deliberately handles **static geometry**. Scene materials/PNG references supply appearance; glTF PBR materials, embedded textures, cameras/lights, additional UV sets, and vertex colors are not imported. Animation, skins, morph targets, nontriangle geometry, and singular/nonaffine transforms are rejected. Imported model nodes are baked, not editable runtime scene nodes. Full matrix/quaternion runtime transforms and material import remain the next glTF integration work. Source files are limited to 32 MiB; decoded geometry is checked after Assimp parsing for 256 node primitives and one million triangle corners.
 
 Gameplay action shortcuts ignore Ctrl, Alt, and Super modifiers; **Ctrl+F does not toggle flight or change the camera**. Bare F still enters the free-flight camera and returns to walking; the first/third-person preference is retained and V explicitly changes it. Shift is allowed with action keys so sprinting does not prevent jump or mode changes.
 
-Version 0.13 adds the editor's document/command layer before GUI integration. `EditorDocument` owns an authored scene, stable-key selection, transactional transform/material/parent/create/delete commands, and bounded undo/redo (64 snapshots by default, up to 256). Invalid edits preserve the scene and history. Mesh/texture data stays shared between snapshots. Frontends must discard entity handles after document revisions and resolve stable keys again.
+`EditorDocument` (introduced in 0.13) owns an authored scene, stable-key selection, transactional transform/material/parent/create/delete commands, and bounded undo/redo (64 snapshots by default, up to 256). Invalid edits preserve the scene and history. Mesh/texture data stays shared between snapshots. Frontends must discard entity handles after document revisions and resolve stable keys again.
 
-Play starts from an independent scene copy; gameplay mutation does not affect authored data. Stop discards runtime changes, saving always uses authored data, and editing is blocked during play. Loading clears selection/history only after successful validation. This is a CPU API, not a GUI editor yet; the next editor step can attach hierarchy and inspector widgets to these commands.
+Play starts from an independent scene copy; gameplay mutation does not affect authored data. Stop discards runtime changes, saving always uses authored data, and editing is blocked during play. Loading clears selection/history only after successful validation. The Lua automation API, `swan-scene`, and the C++ SDK are its frontends.
 
 A headless frontend exercises the same command API:
 
@@ -238,9 +223,7 @@ A headless frontend exercises the same command API:
 ./build/swan --third-person --scene /tmp/edited.swan.json
 ```
 
-`swan-scene INPUT OUTPUT EDITS.json` supports `transform` (id, position, scale, yaw), `parent` (id, parent key or null), `delete` (id), `undo`, and `redo`. It validates a batch before saving once; a failed command leaves the output file intact. Edit files are limited to 1 MiB and 256 commands. Material/create commands are available through the CPU API and will be exposed by the GUI inspector. History uses scene snapshots, so large documents have corresponding CPU memory costs; assets are not reread during edit validation.
-
-Version 0.14 added the first Dear ImGui editor on top of that command layer; version 0.15 replaces its fixed side panels with the docking editor described below.
+`swan-scene INPUT OUTPUT EDITS.json` supports `transform` (id, position, scale, yaw), `parent` (id, parent key or null), `delete` (id), `undo`, and `redo`. It validates a batch before saving once; a failed command leaves the output file intact. Edit files are limited to 1 MiB and 256 commands. Material/create commands are available through the CPU and Lua APIs. History uses scene snapshots, so large documents have corresponding CPU memory costs; assets are not reread during edit validation.
 
 ## FX animation (0.17)
 
@@ -269,47 +252,11 @@ print(preview:stats().particles)
 preview:render_sheet("/tmp/puff.png", { from = 0.9, to = 2, count = 6 })
 ```
 
-[docs/FX.md](docs/FX.md) documents every emitter, timeline, and environment field with defaults, the Lua and command-line APIs, recipes (fire, smoke, explosions, portals, trails, rain), and limits. Behaviour scripts can also call `game.effect(id, {...})` and set `entity.effect`. Effects run in the game, in editor Play, in `swan.simulate`, and in `swan.preview`. `FxPlayer`, `FxRuntime`, `parseEffect`, and the capture helpers are part of the installed headless SDK.
-
-## Scene editor
-
-```bash
-./build/swan editor                                      # empty scene
-./build/swan editor assets/scenes/gltf-garden.swan.json  # open a scene
-```
-
-![Swan's scene editor](docs/editor.png)
-
-The window is a dock space: **Hierarchy**, **Inspector**, **Viewport**, **Assets**, **Console**, **History**, **Timeline**, and **Effect** can be rearranged, tabbed, or closed (View menu reopens them; *View > Reset Layout* restores the default). The layout, recent files, camera speed, snapping, UI size, and frame-rate limit persist per user in `$XDG_CONFIG_HOME/swan` (`~/.config/swan`), or `$SWAN_CONFIG_HOME` when set — never in scene files.
-
-**Editing is live.** Inspector drags, typed values, color pickers, and gizmo drags update the scene immediately as an uncommitted preview; releasing the widget commits exactly one undo step (*Move Crystal pedestal*, *Edit material gold*, ...). A drag that ends where it started, or a text edit cancelled with Esc, adds no history. Invalid intermediate values (e.g. a zero scale while typing) keep the last valid preview and are reported in the Console. There are no Apply buttons.
-
-| Task | How |
-| --- | --- |
-| Command palette (every action, entities, recent files) | **Ctrl+K** or Ctrl+Shift+P, type, Enter |
-| Move / Rotate (Y) / Scale gizmo, select only | **W / E / R**, Q; **X** toggles world/local; magnet toggles snapping, hold **Ctrl** to invert |
-| Fly | Hold **right mouse**, WASD, Q/E down/up, Shift faster, wheel changes speed |
-| Orbit, pan, zoom | **Alt + left drag**, middle drag, wheel |
-| Select, frame | Click in the viewport or hierarchy; **F** frames the selection, Home frames the scene, double-click a hierarchy row |
-| Create, duplicate, delete, rename | **Shift+A** (cube) or drag a mesh from Assets onto the ground; **Ctrl+D**; **Delete**; **F2** |
-| Reparent | Drag a hierarchy row onto another (or onto empty space to unparent); the object keeps its world placement |
-| Assign a material | Drag a material onto a viewport object, hierarchy row, or the Inspector's material field; *Make unique* copies a shared material for one entity |
-| Undo / redo, history | **Ctrl+Z**, **Ctrl+Shift+Z** / Ctrl+Y; click a History entry to jump |
-| New, open, save, save as | **Ctrl+N**, **Ctrl+O**, **Ctrl+S**, **Ctrl+Shift+S** (in-app scene browser) |
-| Play / stop | **F5** (or Ctrl+P); click the viewport to capture the mouse, Esc releases it |
-| Preview effects and the timeline | **Space** plays/pauses, **Shift+Space** rewinds; scrub the Timeline ruler; clapperboard views the shot camera |
-| Animate | **I** keys the selection's transform at the playhead; **Auto Key** turns gizmo/Inspector edits into keys; drag keys to retime, right-click for ease/delete |
-| Effects | *Assets ▸ Effects ▸ New Effect*; drag an effect onto an entity; edit emitters (or full JSON) in the Effect panel; with nothing selected the Inspector edits the environment |
-| UI size, shortcuts | Ctrl+= / Ctrl+- / Ctrl+0; **F1** lists every shortcut |
-| Frame-rate limit | *View ▸ Frame Rate Limit* (default **60 FPS**; 30/120/144 or unlimited). Lower limits use less CPU/GPU; `--fps-limit N` overrides it for any run (0 = unlimited) |
-
-New, Open, Revert, Quit, and closing the window ask before discarding unsaved changes (**•** in the title bar). Gizmo rotation is yaw-only and scaling an entity that has children stays uniform, matching the scene's transform model. Play copies the authored scene and runs the garden game inside the viewport; Stop discards runtime changes, and editing is disabled while playing. Scenes without the garden's goal/collectible roles stay editable, but Play reports an error.
-
-Current limits: single selection; no asset thumbnails for textures; no multi-window (platform viewport) support; materials are created only through *Make unique*. `--editor`, `--scene`, and `--save-scene` remain supported; with `--save-scene`, Ctrl+S writes to that path.
+[docs/FX.md](docs/FX.md) documents every emitter, timeline, and environment field with defaults, the Lua and command-line APIs, recipes (fire, smoke, explosions, portals, trails, rain), and limits. Behaviour scripts can also call `game.effect(id, {...})` and set `entity.effect`. Effects run in the game, in `swan.simulate`, and in `swan.preview`. `FxPlayer`, `FxRuntime`, `parseEffect`, and the capture helpers are part of the installed headless SDK.
 
 ## Scripting (Lua 5.4)
 
-Swan embeds Lua 5.4 through its C API (no binding library), with [LuaLS](https://luals.github.io/) type definitions in `lua/types/swan.lua` for completion and type checking. The dev shell includes `lua-language-server`; `nix flake check` type-checks every bundled script.
+Swan embeds Lua 5.4 through its C API (no binding library), with [LuaLS](https://luals.github.io/) type definitions in `lua/types/swan.lua` for completion and type checking. The dev shell includes `lua-language-server`; CI (`nix flake check`) type-checks every bundled script.
 
 ### Behaviour scripts
 
@@ -331,13 +278,13 @@ return Spinner
 
 A behaviour returns a table with optional `start(self)`, `update(self, dt)` (every 1/120 s tick), and `collected(self)`. `self.entity` exposes `position`, `scale`, `yaw`, `material`, `name`, `world_position`, `parent`, `alive`, and `destroy()`; the global `game` provides `time`, `collected`, `total`, `player`, `input`, `message()`, `find()`, `entities()`, and `spawn{...}`. Behaviours modify only the runtime copy of the scene, never authored data.
 
-Behaviours run sandboxed: only `base`, `coroutine`, `math`, `string`, `table`, and `utf8` are available, chunks must be text, each callback has a 5-million-instruction budget, and the VM is capped at 64 MiB. An error, an infinite loop, or a syntax error stops only that entity's behaviour and is reported (Console in the editor, stdout in the game). `assets/scenes/scripted-garden.swan.json` uses four sample behaviours: a pulsing pedestal, shards that announce progress, and a gate that opens over a spinning reward once every shard is collected.
+Behaviours run sandboxed: only `base`, `coroutine`, `math`, `string`, `table`, and `utf8` are available, chunks must be text, each callback has a 5-million-instruction budget, and the VM is capped at 64 MiB. An error, an infinite loop, or a syntax error stops only that entity's behaviour and is reported on stdout. `assets/scenes/scripted-garden.swan.json` uses four sample behaviours: a pulsing pedestal, shards that announce progress, and a gate that opens over a spinning reward once every shard is collected.
 
-In the editor, attach behaviours from the Inspector's **Script** section or by dragging from **Assets > Scripts** onto an entity; edit per-entity property overrides there. *New Script...* writes a template and registers it. **Play reloads every script from disk**, so edit a `.lua` file and press F5 twice. F5 in the game reloads the scene and its scripts.
+Attach behaviours with `doc:set(key, { script = "id", properties = {...} })` or in the scene JSON. F5 in the game reloads the scene and its scripts from disk.
 
-### Automation and the console
+### Automation
 
-`swan script FILE.lua [ARGS...]` runs a trusted script without a window (full standard library). Every edit goes through the same validated, undoable commands as the editor:
+`swan script FILE.lua [ARGS...]` runs a trusted script without a window (full standard library). Every edit is a validated, undoable document command:
 
 ```lua
 local doc = swan.open("assets/scenes/gltf-garden.swan.json")
@@ -352,14 +299,14 @@ print(sim:player().position, sim.status)
 doc:save("/tmp/raised.swan.json")
 ```
 
-`examples/scripts/` contains `scene-report.lua`, `garden-bot.lua` (walks to every shard, collects it, and asserts the gate opened), and `make-scripted-garden.lua` (which generated the scripted sample scene). The editor's **Console** has a Lua prompt (Ctrl+`) with the live document bound as `doc`: one line is one undo step, expressions print their value, Up/Down recalls history, and with an empty prompt Ctrl+Z undoes the last command.
+`examples/scripts/` contains `scene-report.lua`, `garden-bot.lua` (walks to every shard, collects it, and asserts the gate opened), and `make-scripted-garden.lua` (which generated the scripted sample scene).
 
 ## Headless C++ SDK
 
 The package installs static libraries, window-free headers, and a CMake package. Link `swan::headless`:
 
 ```cmake
-find_package(swan 0.17 CONFIG REQUIRED)
+find_package(swan 0.18 CONFIG REQUIRED)
 target_link_libraries(app PRIVATE swan::headless)
 ```
 
@@ -373,15 +320,3 @@ for(auto& line:simulation.takeMessages()) std::cout<<line<<'\n';   // script out
 ```
 
 `Simulation` runs the full gameplay layer (physics, collection, behaviour scripts) deterministically: identical inputs produce identical states. `ScriptEngine` plus `bindScriptApi()`/`bindDocument()` embed the Lua automation API in another program. `examples/headless-cpp/` is an out-of-tree consumer that the `headless-example` flake check builds against the installed package and runs.
-
-### Editor dependencies and development
-
-Dear ImGui (docking branch, 1.92.9b) and ImGuizmo are pinned as non-flake inputs in `flake.lock` and compiled into `swan_ui_deps`; Inter and the Lucide icon font come from nixpkgs. `nix develop` exports their paths (`SWAN_IMGUI_DIR`, `SWAN_IMGUIZMO_DIR`, `SWAN_UI_FONT`, `SWAN_ICON_FONT`) and package builds pass them as CMake flags. Bump them with `nix flake update imgui imguizmo`; when nixpkgs changes the Lucide version, update the codepoints in `src/editor_icons.hpp` from that version's `lucide-static/font/info.json`.
-
-Editor commands are registered once in `EditorLayer::registerActions()` (`EditorAction`: id, label, icon, shortcut, enabled/checked predicates); the menus, keyboard dispatch, palette, and F1 sheet all read that registry. Panels never mutate scene data directly: they call `EditorDocument::showPreview()` for continuous edits or `apply()` (one command or an atomic batch) for discrete ones.
-
-```bash
-nix develop path:. --command bash scripts/editor-ui-test.sh
-```
-
-The GUI test drives the editor with real X11 input under Xvfb and Vulkan synchronization validation: inspector typing, Ctrl+S/Z/Y, a gizmo drag committing one undo step, duplicate, the command palette, Esc deselect, viewport picking, delete, material drag-and-drop, Play/Stop, the unsaved-changes guard (Cancel and Don't Save), settings/layout persistence, and an empty session. It locates widgets through `SWAN_EDITOR_PROBE`: when that variable names a file, the editor writes the screen rectangles of tagged widgets (`probe::item("inspector/name")`) and a few state values as JSON, so layout changes do not break the test.
