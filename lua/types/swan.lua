@@ -376,6 +376,72 @@ function Document:scripts() end
 ---@param id string
 ---@param path string
 function Document:add_script(id, path) end
+---Register (or re-read) a PNG as a texture asset for materials.
+---@param id string
+---@param path string
+function Document:add_texture(id, path) end
+---Register an OBJ, or one part of a glTF/GLB file, as a mesh asset.
+---@param id string
+---@param path string
+---@param part? integer glTF part 0..255 (depth-first node primitive order).
+function Document:add_mesh(id, path, part) end
+
+---@class DuplicateOptions
+---@field key? string Key for the copy's root; generated when omitted.
+---@field offset? vec3|number[] World-space move.
+
+---Copy an entity and its descendants under the same parent (one undo step). Timeline tracks and
+---events are not copied; descendants get generated keys. Selects the copy.
+---@param key string
+---@param options? DuplicateOptions
+---@return string key
+function Document:duplicate(key, options) end
+
+---@class DocumentBounds
+---@field min vec3
+---@field max vec3
+---@field center vec3
+---@field size vec3
+
+---World axis-aligned bounds of an entity's collision box.
+---@param key string
+---@param options? {children?: boolean} Include descendants.
+---@return DocumentBounds
+function Document:bounds(key, options) end
+
+---@class DocumentQueryOptions
+---@field solid_only? boolean
+---@field triggers? boolean Include trigger volumes.
+---@field ignore? string Entity key to skip.
+
+---@class DocumentHit
+---@field key string
+---@field point vec3
+---@field normal vec3
+---@field distance number
+
+---Nearest authored entity box along a ray; boxes containing the origin are skipped.
+---@param origin vec3
+---@param direction vec3
+---@param max_distance? number Defaults to 1000.
+---@param options? DocumentQueryOptions
+---@return DocumentHit?
+function Document:raycast(origin, direction, max_distance, options) end
+
+---@class PickView : DocumentQueryOptions
+---@field position vec3|number[] Camera position (as `swan render --camera X,Y,Z,...`).
+---@field target vec3|number[]
+---@field fov? number Vertical degrees; default 55 (the `--camera` default).
+---@field width? integer Image width in pixels; default 640.
+---@field height? integer Image height; default 360.
+
+---The entity drawn at a pixel of an image rendered with this view. `x`, `y` are pixels from the
+---top-left corner; add 0.5 to integer indices to hit pixel centers.
+---@param x number
+---@param y number
+---@param view PickView
+---@return DocumentHit?
+function Document:pick(x, y, view) end
 ---@return boolean
 function Document:undo() end
 ---@return boolean

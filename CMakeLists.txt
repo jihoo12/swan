@@ -84,6 +84,11 @@ target_link_libraries(hierarchy_test PRIVATE swan_demo nlohmann_json::nlohmann_j
 add_test(NAME hierarchy COMMAND hierarchy_test)
 add_test(NAME hierarchy_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/hierarchy-garden.swan.json")
 
+add_executable(authoring_test tests/authoring_test.cpp)
+target_link_libraries(authoring_test PRIVATE swan_core)
+target_compile_definitions(authoring_test PRIVATE SWAN_TEST_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets")
+add_test(NAME authoring COMMAND authoring_test)
+
 add_executable(physics_query_test tests/physics_query_test.cpp)
 target_link_libraries(physics_query_test PRIVATE swan_core nlohmann_json::nlohmann_json)
 add_test(NAME physics_query COMMAND physics_query_test)

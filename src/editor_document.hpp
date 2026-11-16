@@ -19,8 +19,16 @@ struct SetEffect { std::string id; std::optional<EffectDef> value; };
 struct SetEntityEffect { std::string key,effectId; };   // Empty effectId detaches.
 struct SetTimeline { Timeline value; };
 struct SetEnvironment { Environment value; };
+// Registers (or re-reads) a PNG file as a texture asset.
+struct AddTexture { std::string id; std::filesystem::path path; };
+// Registers an OBJ, or one part of a glTF/GLB file, as a mesh asset.
+struct AddMesh { std::string id; std::filesystem::path path; uint32_t part=0; };
+// Copies an entity and all its descendants under the same parent, moved by a world-space
+// offset. The copy's root gets `newKey` (generated when empty) and becomes the selection;
+// descendants get generated keys. Timeline tracks and events are not copied.
+struct DuplicateEntity { std::string key,newKey; glm::vec3 offset{}; };
 using SceneEdit=std::variant<SetTransform,SetEntityProperties,SetMaterial,CreateMaterial,SetParent,CreateEntity,DeleteEntity,SetEntityScript,AddScript,
-                             SetEffect,SetEntityEffect,SetTimeline,SetEnvironment>;
+                             SetEffect,SetEntityEffect,SetTimeline,SetEnvironment,AddTexture,AddMesh,DuplicateEntity>;
 // Human-readable history label, e.g. "Move Crystal pedestal", resolved against the pre-edit scene.
 std::string describe(const SceneEdit& edit,const Scene& scene);
 // Frontends retain keys, not entity handles, across edits and history navigation.

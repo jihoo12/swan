@@ -307,7 +307,23 @@ print(sim:player().position, sim.status)
 doc:save("/tmp/raised.swan.json")
 ```
 
-`examples/scripts/` contains `scene-report.lua`, `garden-bot.lua` (walks to every shard, collects it, and asserts the gate opened), and `make-scripted-garden.lua` (which generated the scripted sample scene).
+`examples/scripts/` contains `scene-report.lua`, `garden-bot.lua` (walks to every shard, collects it, and asserts the gate opened), `trigger-bot.lua` (steps on a trigger and checks the door), and `make-scripted-garden.lua` (which generated the scripted sample scene).
+
+Scripts can also ask about the authored scene and register assets. `doc:pick(x, y, view)` returns the entity drawn at a pixel of an image rendered with the same camera, so a tool (or an AI) can look at a `swan render` PNG and edit what it sees:
+
+```lua
+local doc = swan.open("assets/scenes/trigger-garden.swan.json")
+local view = { position = vec3(6, 5, 10), target = vec3(0, 1, -1), fov = 55, width = 640, height = 360 }
+-- swan render assets/scenes/trigger-garden.swan.json --camera 6,5,10,0,1,-1 --size 640x360
+local hit = doc:pick(320.5, 180.5, view)                  -- { key, point, normal, distance } or nil
+local b = doc:bounds("door", { children = true })         -- { min, max, center, size }
+doc:raycast(vec3(0, 2, 5), vec3(0, 0, -1))                -- nearest authored box along a ray
+doc:add_texture("tiles", "assets/textures/courtyard.png")
+doc:add_mesh("lamp", "assets/models/lantern.glb", 1)      -- glTF part 1
+doc:duplicate("slider", { key = "slider-2", offset = vec3(0, 0, -2) })   -- copies children too
+```
+
+These are also C++ `EditorDocument` commands (`AddTexture`, `AddMesh`, `DuplicateEntity`) and core queries (`raycast`, `worldBounds`, `Camera::pixelRay`). Queries use the same collision boxes as gameplay, not triangle surfaces. Duplicates do not copy timeline tracks or events.
 
 ## Headless C++ SDK
 

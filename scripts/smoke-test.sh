@@ -176,3 +176,65 @@ if [[ -f "$installed_trigger" ]]; then trigger_scene="$installed_trigger"; fi
 env -u DISPLAY -u WAYLAND_DISPLAY "$binary" script examples/scripts/trigger-bot.lua "$trigger_scene"
 window --scene "$trigger_scene" --reload-test --resize-test --frames 90
 echo "Trigger volumes verified"
+# Picking: doc:pick on pixels of a GPU render must return the entity drawn there.
+python3 - "$work/pick.json" <<'PY'
+import json
+import sys
+def cube(key, position, color):
+    return {"id": key, "name": key, "mesh": "builtin:cube", "material": key, "solid": False, "collectible": False, "goal": False,
+            "transform": {"position": position, "scale": [1, 1, 1], "yaw": 0.6}}
+scene = {"format": "swan-scene", "version": 8, "spawn": [0, 0, 20],
+         "materials": {"red": {"color": [1, 0, 0], "emission": 2}, "green": {"color": [0, 1, 0], "emission": 2}},
+         "environment": {"background": [0, 0, 0], "fog": 0, "ambient": 0, "sun": 0, "local_light": 0, "bloom": 0, "shadows": 0},
+         "entities": [cube("red", [-1.8, 0.6, 0], [1, 0, 0]), cube("green", [2.2, -0.4, -1], [0, 1, 0])]}
+json.dump(scene, open(sys.argv[1], "w"))
+PY
+env -u DISPLAY -u WAYLAND_DISPLAY timeout 120s "$binary" render "$work/pick.json" --validation --time 0 --size 320x180 --camera 1,2,8,0,0,0,50 -o "$work/pick.png" 2>"$work/pick.log" || { cat "$work/pick.log"; exit 1; }
+hardware "$work/pick.log"
+grep -q 'Validation errors: 0' "$work/pick.log"
+pixels=$(python3 - "$work/pick.png" <<'PY'
+import struct
+import sys
+import zlib
+data = open(sys.argv[1], 'rb').read()
+width, height = struct.unpack('>II', data[16:24])
+offset, idat = 8, b''
+while offset < len(data):
+    length, kind = struct.unpack('>I4s', data[offset:offset + 8])
+    if kind == b'IDAT': idat += data[offset + 8:offset + 8 + length]
+    offset += 12 + length
+raw, stride, rows, previous = zlib.decompress(idat), width * 4, [], bytearray(width * 4)
+for y in range(height):
+    kind, line = raw[y * (stride + 1)], bytearray(raw[y * (stride + 1) + 1:(y + 1) * (stride + 1)])
+    for i in range(stride):
+        a = line[i - 4] if i >= 4 else 0
+        b = previous[i]
+        c = previous[i - 4] if i >= 4 else 0
+        p = a + b - c
+        pred = a if abs(p - a) <= abs(p - b) and abs(p - a) <= abs(p - c) else (b if abs(p - b) <= abs(p - c) else c)
+        line[i] = (line[i] + [0, a, b, (a + b) // 2, pred][kind]) & 255
+    rows.append(line); previous = line
+for channel in (0, 1):  # Red then green: centroid of pixels dominated by that channel.
+    xs = ys = n = 0
+    for y, line in enumerate(rows):
+        for x in range(width):
+            px = line[x * 4:x * 4 + 3]
+            if px[channel] > 120 and px[channel] > 3 * max(px[(channel + 1) % 3], px[(channel + 2) % 3]):
+                xs += x; ys += y; n += 1
+    assert n > 50, f'channel {channel}: only {n} pixels'
+    print(f'{xs / n + 0.5:.2f} {ys / n + 0.5:.2f}', end=' ')
+PY
+)
+cat >"$work/pick.lua" <<'LUA'
+local doc = swan.open(swan.args[1])
+local view = { position = vec3(1, 2, 8), target = vec3(0, 0, 0), fov = 50, width = 320, height = 180 }
+local expected = { "red", "green" }
+for i = 1, 2 do
+  local x, y = tonumber(swan.args[i * 2]), tonumber(swan.args[i * 2 + 1])
+  local hit = doc:pick(x, y, view)
+  assert(hit and hit.key == expected[i], ("pixel %.1f,%.1f picked %s, expected %s"):format(x, y, hit and hit.key or "nothing", expected[i]))
+end
+print("pick matches the GPU render")
+LUA
+# shellcheck disable=SC2086
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" script "$work/pick.lua" "$work/pick.json" $pixels

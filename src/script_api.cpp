@@ -2,6 +2,7 @@
 #include "fx_capture.hpp"
 #include "fx_json.hpp"
 #include "image.hpp"
+#include "physics.hpp"
 #include "script_lua.hpp"
 #include "simulation.hpp"
 #include <cmath>
@@ -256,6 +257,29 @@ void pushStats(lua_State* L,const FxPlayer& player) {
     lua_setfield(L,-2,"emitters");
 }
 std::string label(const Entity& e) {return e.name.empty()?e.key:e.name;}
+// { solid_only, triggers, ignore = key } for authored-scene queries.
+QueryFilter documentFilter(lua_State* L,int index,const Scene& scene) {
+    QueryFilter filter;
+    if(lua_isnoneornil(L,index)) return filter;
+    if(lua_type(L,index)!=LUA_TTABLE) throw std::invalid_argument("query options must be a table");
+    filter.solidOnly=lua::fieldBool(L,index,"solid_only",false);
+    filter.triggers=lua::fieldBool(L,index,"triggers",false);
+    if(lua::present(L,index,"ignore")) {
+        auto key=lua::fieldString(L,index,"ignore","");
+        auto id=scene.find(key);
+        if(!scene.get(id)) throw std::invalid_argument("unknown entity "+key);
+        filter.ignore=id;
+    }
+    return filter;
+}
+void pushHit(lua_State* L,const Scene& scene,const std::optional<RayHit>& hit) {
+    if(!hit) {lua_pushnil(L);return;}
+    lua_createtable(L,0,4);
+    lua::push(L,scene.get(hit->entity)->key);lua_setfield(L,-2,"key");
+    lua::push(L,hit->point);lua_setfield(L,-2,"point");
+    lua::push(L,hit->normal);lua_setfield(L,-2,"normal");
+    lua_pushnumber(L,hit->distance);lua_setfield(L,-2,"distance");
+}
 int bindTypes(lua_State* L) {
     if(luaL_getmetatable(L,DocumentType)!=LUA_TNIL) {lua_pop(L,1);return 0;}
     lua_pop(L,1);
@@ -378,6 +402,57 @@ int bindTypes(lua_State* L) {
             for(const auto& [id,script]:document(L).document().scene.scripts().entries()) {lua::push(L,script.source.string());lua_setfield(L,-2,id.c_str());}
             return 1;});}},
         {"add_script",[](lua_State* L){return protect(L,[&]{document(L).apply(AddScript{lua::string(L,2,"id"),lua::string(L,3,"path")});return 0;});}},
+        {"add_texture",[](lua_State* L){return protect(L,[&]{document(L).apply(AddTexture{lua::string(L,2,"id"),lua::string(L,3,"path")});return 0;});}},
+        {"add_mesh",[](lua_State* L){return protect(L,[&]{
+            lua_Integer part=lua::none(L,4)?0:luaL_checkinteger(L,4);
+            if(part<0 || part>255) throw std::invalid_argument("mesh part must be 0..255");
+            document(L).apply(AddMesh{lua::string(L,2,"id"),lua::string(L,3,"path"),uint32_t(part)});return 0;});}},
+        {"duplicate",[](lua_State* L){return protect(L,[&]{
+            // doc:duplicate(key, { key = new key, offset = vec3 }) -> new key
+            auto& doc=document(L);DuplicateEntity command{lua::string(L,2,"key"),{},{}};
+            if(!lua::none(L,3)) {
+                if(lua_type(L,3)!=LUA_TTABLE) throw std::invalid_argument("duplicate() options must be a table");
+                command.newKey=lua::fieldString(L,3,"key","");
+                if(auto v=lua::fieldVec3(L,3,"offset")) command.offset=*v;
+            }
+            doc.apply(command);
+            lua::push(L,doc.selection());return 1;});}},
+        {"bounds",[](lua_State* L){return protect(L,[&]{
+            // doc:bounds(key, { children = true }) -> { min, max, center, size }
+            const auto& scene=document(L).document().scene;auto key=lua::string(L,2,"key");
+            auto id=scene.find(key);
+            if(!scene.get(id)) throw std::invalid_argument("unknown entity "+key);
+            bool children=false;
+            if(!lua::none(L,3)) {
+                if(lua_type(L,3)!=LUA_TTABLE) throw std::invalid_argument("bounds() options must be a table");
+                children=lua::fieldBool(L,3,"children",false);
+            }
+            auto b=worldBounds(scene,id,children);
+            lua_createtable(L,0,4);
+            lua::push(L,b.minimum);lua_setfield(L,-2,"min");lua::push(L,b.maximum);lua_setfield(L,-2,"max");
+            lua::push(L,(b.minimum+b.maximum)*0.5f);lua_setfield(L,-2,"center");lua::push(L,b.maximum-b.minimum);lua_setfield(L,-2,"size");
+            return 1;});}},
+        {"raycast",[](lua_State* L){return protect(L,[&]{
+            // doc:raycast(origin, direction, max_distance = 1000, options) -> { key, point, normal, distance } | nil
+            const auto& scene=document(L).document().scene;
+            float distance=lua::none(L,4)?1000.0f:lua::finite(L,4,"max_distance");
+            pushHit(L,scene,raycast(scene,lua::vec3(L,2,"origin"),lua::vec3(L,3,"direction"),distance,documentFilter(L,5,scene)));
+            return 1;});}},
+        {"pick",[](lua_State* L){return protect(L,[&]{
+            // doc:pick(x, y, { position, target, fov = 55, width = 640, height = 360, ... }) -> hit | nil
+            // Pixel coordinates from the top-left of an image rendered with the same camera.
+            const auto& scene=document(L).document().scene;
+            float x=lua::finite(L,2,"x"),y=lua::finite(L,3,"y");
+            if(lua_type(L,4)!=LUA_TTABLE) throw std::invalid_argument("pick() needs a view table { position, target, fov, width, height }");
+            auto position=lua::fieldVec3(L,4,"position"),target=lua::fieldVec3(L,4,"target");
+            if(!position || !target) throw std::invalid_argument("pick() view needs position and target");
+            float fov=lua::fieldNumber(L,4,"fov",55),width=lua::fieldNumber(L,4,"width",640),height=lua::fieldNumber(L,4,"height",360);
+            if(!(fov>1 && fov<179)) throw std::invalid_argument("pick() fov must be within 1..179 degrees");
+            if(!(width>=1 && height>=1 && width<=16384 && height<=16384)) throw std::invalid_argument("pick() width and height must be 1..16384");
+            if(x<0 || y<0 || x>width || y>height) throw std::invalid_argument("pick() pixel is outside the image");
+            auto ray=lookAt(*position,*target,fov).pixelRay({x,y},{width,height});
+            pushHit(L,scene,raycast(scene,ray.origin,ray.direction,1000,documentFilter(L,4,scene)));
+            return 1;});}},
         {"effects",[](lua_State* L){return protect(L,[&]{
             lua_newtable(L);
             for(const auto& [id,effect]:document(L).document().scene.effects().entries()) {pushJson(L,effectToJson(*effect));lua_setfield(L,-2,id.c_str());}

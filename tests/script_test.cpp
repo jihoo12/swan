@@ -277,6 +277,43 @@ void physicsQueries() {
     require(contains(game.takeMessages(),"exit zone"),"Entering flight did not exit the trigger");
     require(game.scripts()->failureCount()==0,"Behaviour failed");
 }
+// Authoring queries and asset/duplicate commands on a document.
+void authoringApi() {
+    swan::EditorDocument document(swan::loadScene(std::string(SWAN_TEST_ASSET_DIR)+"/scenes/trigger-garden.swan.json"));
+    swan::ScriptEngine engine(swan::ScriptEngine::Mode::Tool,[](const std::string&){});
+    swan::bindScriptApi(engine);
+    swan::bindDocument(engine,"doc",document);
+    std::string assets=SWAN_TEST_ASSET_DIR;
+    auto result=engine.run("local assets = '"+assets+"'\n"+R"(
+        local b = doc:bounds("door")
+        assert(math.abs(b.size.x - 2) < 1e-4 and math.abs(b.min.y) < 1e-4 and math.abs(b.center.z + 6) < 1e-4, "door bounds")
+        local hit = doc:raycast(vec3(0, 2, 5), vec3(0, 0, -1))
+        assert(hit and hit.key == "door" and hit.normal.z == 1, "raycast to the door")
+        assert(doc:raycast(vec3(0, 1.8, 5), vec3(0, 0, -1), 100, { triggers = true }).key == "switch", "trigger raycast")
+        assert(doc:raycast(vec3(0, 2, 5), vec3(0, 0, -1), 100, { ignore = "door" }) == nil, "ignore by key")
+        -- The center pixel of a camera aimed at the door picks the door.
+        local view = { position = vec3(0, 1.5, 8), target = vec3(0, 1.25, -6), fov = 50, width = 320, height = 180 }
+        assert(doc:pick(160, 90, view).key == "door", "pick the door")
+        assert(doc:pick(160, 1, view) == nil, "pick the sky")
+        assert(not pcall(doc.pick, doc, 400, 90, view), "pixel outside the image")
+        assert(not pcall(doc.pick, doc, 1, 1, { width = 10, height = 10 }), "view without a camera")
+        -- Duplicate with an offset; the copy is selected and undoable as one step.
+        local copy = doc:duplicate("slider", { key = "slider-2", offset = vec3(0, 0, -2) })
+        assert(copy == "slider-2" and doc.selection == "slider-2", "duplicate key and selection")
+        assert(doc:entity("slider-2").script == "slider" and doc:entity("slider-2").position.z == 0, "duplicate copies fields")
+        local generated = doc:duplicate("switch")
+        assert(generated ~= "switch" and doc:entity(generated).trigger, "duplicate keeps the trigger flag")
+        doc:undo(); doc:undo()
+        assert(doc:entity("slider-2") == nil, "undo duplicate")
+        doc:add_texture("tiles2", assets .. "/textures/courtyard.png")
+        doc:add_mesh("lamp-flame", assets .. "/models/lantern.gltf", 2)
+        assert(doc:meshes()["lamp-flame"].material.emission == 4, "added glTF part")
+        assert(not pcall(doc.add_mesh, doc, "bad", assets .. "/models/lantern.gltf", 7), "part out of range")
+        assert(not pcall(doc.add_mesh, doc, "bad", assets .. "/models/lantern.gltf", -1), "negative part")
+        doc:create{ name = "Lamp", mesh = "lamp-flame", material = "builtin:imported" }
+    )","authoring");
+    if(!result.ok) throw std::runtime_error("Authoring API failed: "+result.error);
+}
 // Read-only mesh listing with imported glTF materials; entities can use builtin:imported.
 void meshApi() {
     swan::EditorDocument document(swan::loadScene(std::string(SWAN_TEST_ASSET_DIR)+"/scenes/lantern-garden.swan.json"));
@@ -308,5 +345,6 @@ int main() {
         fxApi();std::cout<<"effects, timeline, preview, and game.effect API: ok\n";
         meshApi();std::cout<<"mesh listing and imported materials: ok\n";
         physicsQueries();std::cout<<"triggers, raycasts, and overlaps: ok\n";
+        authoringApi();std::cout<<"authoring queries, assets, and duplicate: ok\n";
     } catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
 }

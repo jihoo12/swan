@@ -14,6 +14,9 @@ struct RayHit { EntityId entity; glm::vec3 point{},normal{}; float distance=0; }
 std::optional<RayHit> raycast(const Scene& scene,glm::vec3 origin,glm::vec3 direction,float maxDistance,const QueryFilter& filter={});
 // Entities whose box intersects the sphere, in scene order.
 std::vector<EntityId> overlapSphere(const Scene& scene,glm::vec3 center,float radius,const QueryFilter& filter={});
+// World-space axis-aligned bounds of an entity's collision box, optionally with its descendants.
+struct Bounds { glm::vec3 minimum{},maximum{}; };
+Bounds worldBounds(const Scene& scene,EntityId id,bool descendants=false);
 // Whether the player capsule (feet position) overlaps the entity's box.
 bool capsuleTouches(const Scene& scene,EntityId id,glm::vec3 feet,float radius=0.3f,float height=1.8f);
 struct MotionResult { glm::vec3 feet{}; bool grounded=false,ceiling=false; };
