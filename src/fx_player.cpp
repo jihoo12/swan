@@ -130,8 +130,8 @@ RenderFrame FxPlayer::frame(std::optional<Camera> camera) const {
     frame.objects.reserve(scene.size());
     for(auto id:scene.entities()) {
         const auto* entity=scene.get(id);
-        const auto& material=scene.assets().get(entity->materialId);
-        frame.objects.push_back({scene.worldTransform(id),material,scene.meshes().get(entity->meshId).data,scene.textures().get(material.textureId).data});
+        auto look=scene.appearance(*entity);
+        frame.objects.push_back({scene.worldTransform(id),look.material,scene.meshes().get(entity->meshId).data,look.texture});
     }
     impl->fx->appendTo(frame,scene);
     return frame;

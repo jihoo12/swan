@@ -159,3 +159,13 @@ env -u DISPLAY -u WAYLAND_DISPLAY timeout 120s "$binary" render "$work/no-shadow
 hardware "$work/no-shadows.log"
 grep -q 'Shadow casters drawn: 0' "$work/no-shadows.log" && grep -q 'Validation errors: 0' "$work/no-shadows.log"
 echo "Sun shadows verified"
+# Imported glTF materials: headless render and windowed play with reload.
+lantern_scene=assets/scenes/lantern-garden.swan.json
+installed_lantern="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/lantern-garden.swan.json"
+if [[ -f "$installed_lantern" ]]; then lantern_scene="$installed_lantern"; fi
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" --validate-scene "$lantern_scene"
+env -u DISPLAY -u WAYLAND_DISPLAY timeout 120s "$binary" render "$lantern_scene" --validation --time 1 --size 320x180 --camera 0,2.4,5.5,0,0.9,0 -o "$work/lantern.png" 2>"$work/lantern.log" || { cat "$work/lantern.log"; exit 1; }
+hardware "$work/lantern.log"
+grep -q 'Validation errors: 0' "$work/lantern.log"
+window --scene "$lantern_scene" --overview --reload-test --resize-test --frames 90
+echo "Imported glTF materials verified"

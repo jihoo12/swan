@@ -1,0 +1,370 @@
+{
+  "format": "swan-scene",
+  "version": 8,
+  "spawn": [
+    0,
+    0.2,
+    6
+  ],
+  "materials": {
+    "floor": {
+      "color": [
+        0.7,
+        0.85,
+        0.9
+      ],
+      "emission": 0,
+      "texture": "stone-tiles",
+      "uv_scale": [
+        6,
+        6
+      ]
+    },
+    "jade": {
+      "color": [
+        0.2,
+        0.75,
+        0.45
+      ],
+      "emission": 0
+    }
+  },
+  "meshes": {
+    "lantern-base": {
+      "source": "../models/lantern.gltf",
+      "part": 0
+    },
+    "lantern-glb-base": {
+      "source": "../models/lantern.glb",
+      "part": 0
+    },
+    "lantern-body": {
+      "source": "../models/lantern.gltf",
+      "part": 1
+    },
+    "lantern-glb-body": {
+      "source": "../models/lantern.glb",
+      "part": 1
+    },
+    "lantern-flame": {
+      "source": "../models/lantern.gltf",
+      "part": 2
+    },
+    "lantern-glb-flame": {
+      "source": "../models/lantern.glb",
+      "part": 2
+    },
+    "lantern-cap": {
+      "source": "../models/lantern.gltf",
+      "part": 3
+    },
+    "lantern-glb-cap": {
+      "source": "../models/lantern.glb",
+      "part": 3
+    }
+  },
+  "textures": {
+    "stone-tiles": {
+      "source": "../textures/courtyard.png"
+    }
+  },
+  "environment": {
+    "ambient": 0.2,
+    "sun": 0.95,
+    "local_light": 0.4,
+    "sun_direction": [
+      -0.5,
+      1,
+      0.6
+    ],
+    "shadows": 0.8
+  },
+  "entities": [
+    {
+      "id": "floor",
+      "name": "Floor",
+      "mesh": "builtin:cube",
+      "material": "floor",
+      "transform": {
+        "position": [
+          0,
+          -0.25,
+          0
+        ],
+        "scale": [
+          12,
+          0.5,
+          12
+        ],
+        "yaw": 0
+      },
+      "solid": true,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "left-base",
+      "name": "Left lantern base",
+      "mesh": "lantern-base",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          -2.2,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": 0.4
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "left-body",
+      "name": "Left lantern body",
+      "mesh": "lantern-body",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          -2.2,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": 0.4
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "left-flame",
+      "name": "Left lantern flame",
+      "mesh": "lantern-flame",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          -2.2,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": 0.4
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "left-cap",
+      "name": "Left lantern cap",
+      "mesh": "lantern-cap",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          -2.2,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": 0.4
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "center-base",
+      "name": "Center lantern base",
+      "mesh": "lantern-glb-base",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -1
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": 0
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "center-body",
+      "name": "Center lantern body",
+      "mesh": "lantern-glb-body",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -1
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": 0
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "center-flame",
+      "name": "Center lantern flame",
+      "mesh": "lantern-glb-flame",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -1
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": 0
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "center-cap",
+      "name": "Center lantern cap",
+      "mesh": "lantern-glb-cap",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          0,
+          0,
+          -1
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": 0
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "right-base",
+      "name": "Right lantern base",
+      "mesh": "lantern-base",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          2.2,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": -0.4
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "right-body",
+      "name": "Right lantern body",
+      "mesh": "lantern-body",
+      "material": "jade",
+      "transform": {
+        "position": [
+          2.2,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": -0.4
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "right-flame",
+      "name": "Right lantern flame",
+      "mesh": "lantern-flame",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          2.2,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": -0.4
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "right-cap",
+      "name": "Right lantern cap",
+      "mesh": "lantern-cap",
+      "material": "builtin:imported",
+      "transform": {
+        "position": [
+          2.2,
+          0,
+          0
+        ],
+        "scale": [
+          1.6,
+          1.6,
+          1.6
+        ],
+        "yaw": -0.4
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    }
+  ]
+}

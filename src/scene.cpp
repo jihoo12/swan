@@ -76,6 +76,18 @@ void Scene::validate() const {
     for(auto id:checked.entities()) checked.worldTransform(id);
     checked.validateReferences();
 }
+Appearance Scene::appearance(const Entity& entity) const {
+    if(entity.materialId==importedMaterialId) {
+        Appearance result{materialAssets.get(importedMaterialId),whiteTexture()};
+        if(const auto& imported=meshAssets.get(entity.meshId).material) {
+            result.material.color=imported->color;result.material.emission=imported->emission;
+            if(imported->texture) result.texture=imported->texture;
+        }
+        return result;
+    }
+    const auto& material=materialAssets.get(entity.materialId);
+    return {material,textureAssets.get(material.textureId).data};
+}
 void Scene::setEnvironment(Environment value) {
     auto finite=[](float v){return std::isfinite(v);};
     for(int i=0;i<3;++i) if(!finite(value.background[i]) || value.background[i]<0) throw std::invalid_argument("Environment background must be finite and nonnegative");
@@ -96,7 +108,7 @@ void Scene::validateReferences() const {
                 throw std::invalid_argument("Effect "+id+": unknown texture asset: "+emitter.texture);
     validateTimeline(sceneTimeline);
     for(const auto& track:sceneTimeline.tracks) {
-        if(track.kind==TrackTarget::Material) {if(!materialAssets.contains(track.target)) throw std::invalid_argument("Timeline track targets unknown material: "+track.target);}
+        if(track.kind==TrackTarget::Material) {if(track.target==importedMaterialId || !materialAssets.contains(track.target)) throw std::invalid_argument("Timeline track targets unknown material: "+track.target);}
         else if(track.kind==TrackTarget::Entity) {
             auto id=find(track.target);
             if(!get(id)) throw std::invalid_argument("Timeline track targets unknown entity: "+track.target);

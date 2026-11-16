@@ -32,6 +32,8 @@ struct Environment {
     ToneMap toneMap=ToneMap::Reinhard;
     bool operator==(const Environment&) const=default;
 };
+// What an entity looks like: its catalog material, or its glTF part's imported material.
+struct Appearance { Material material; SharedTexture texture; };
 struct EntityId {
     uint32_t index=std::numeric_limits<uint32_t>::max(),generation=0;
     bool operator==(const EntityId&) const = default;
@@ -64,6 +66,7 @@ public:
     const MeshAssets& meshes() const { return meshAssets; }
     TextureAssets& textures() { return textureAssets; }
     const TextureAssets& textures() const { return textureAssets; }
+    Appearance appearance(const Entity& entity) const;
     ScriptAssets& scripts() { return scriptAssets; }
     const ScriptAssets& scripts() const { return scriptAssets; }
     EffectAssets& effects() { return effectAssets; }

@@ -339,6 +339,27 @@ int bindTypes(lua_State* L) {
             lua_newtable(L);
             for(const auto& [id,m]:document(L).document().scene.assets().entries()) {pushMaterial(L,m);lua_setfield(L,-2,id.c_str());}
             return 1;});}},
+        {"meshes",[](lua_State* L){return protect(L,[&]{
+            // Read-only: each mesh asset's source and, for glTF parts, the imported material.
+            lua_newtable(L);
+            for(const auto& [id,mesh]:document(L).document().scene.meshes().entries()) {
+                lua_createtable(L,0,3);
+                lua::push(L,mesh.source.empty()?std::string():mesh.source.string());lua_setfield(L,-2,"source");
+                lua_pushinteger(L,lua_Integer(mesh.part));lua_setfield(L,-2,"part");
+                if(const auto& m=mesh.material) {
+                    lua_createtable(L,0,5);
+                    lua::push(L,m->name);lua_setfield(L,-2,"name");
+                    lua::push(L,m->color);lua_setfield(L,-2,"color");
+                    lua_pushnumber(L,m->emission);lua_setfield(L,-2,"emission");
+                    lua_pushboolean(L,m->texture!=nullptr);lua_setfield(L,-2,"textured");
+                    lua_createtable(L,int(m->unsupported.size()),0);
+                    for(size_t i=0;i<m->unsupported.size();++i) {lua::push(L,m->unsupported[i]);lua_rawseti(L,-2,lua_Integer(i+1));}
+                    lua_setfield(L,-2,"unsupported");
+                    lua_setfield(L,-2,"material");
+                }
+                lua_setfield(L,-2,id.c_str());
+            }
+            return 1;});}},
         {"set_material",[](lua_State* L){return protect(L,[&]{
             auto& doc=document(L);auto id=lua::string(L,2,"id");
             if(lua_type(L,3)!=LUA_TTABLE) throw std::invalid_argument("set_material() takes a table of changes");
