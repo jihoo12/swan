@@ -36,6 +36,7 @@ EntityId Scene::create(Entity entity) {
         if(entity.solid) throw std::invalid_argument("Animated solid colliders are not supported");
     }
     if(entity.goal && entity.collectible) throw std::invalid_argument("A goal cannot also be collectible");
+    if(entity.trigger && (entity.solid || entity.collectible || entity.goal)) throw std::invalid_argument("A trigger cannot be solid, collectible, or a goal");
     if(!entity.scriptId.empty() && !scriptAssets.contains(entity.scriptId)) throw std::invalid_argument("Unknown script asset: "+entity.scriptId);
     if(!entity.effectId.empty() && !effectAssets.contains(entity.effectId)) throw std::invalid_argument("Unknown effect asset: "+entity.effectId);
     if(entity.properties.size()>32) throw std::invalid_argument("An entity supports at most 32 script properties");

@@ -1,6 +1,7 @@
 #include "script_runtime.hpp"
 #include "script_engine.hpp"
 #include "script_lua.hpp"
+#include "physics.hpp"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -47,6 +48,7 @@ struct ScriptRuntime::Impl {
     std::map<std::string,int> modules; // Script ID -> registry reference, LUA_NOREF after a failure.
     std::vector<Instance> instances;
     std::set<uint64_t> known;
+    std::vector<EntityId> occupied; // Triggers the player was inside after the last tick.
     int game=LUA_NOREF;
     std::string message;
     size_t failures=0;
@@ -101,6 +103,11 @@ struct ScriptRuntime::Impl {
             report("Script "+instance.script+" on "+label(instance.id)+" stopped: "+*error);
         }
     }
+    void callOn(EntityId id,const char* name) {
+        for(size_t i=0;i<instances.size();++i) if(instances[i].id==id) call(instances[i],name);
+    }
+    bool playerInside(EntityId id) const {return std::find(occupied.begin(),occupied.end(),id)!=occupied.end();}
+    void updateTriggers(const ScriptGameState& state);
     void start(EntityId id);
     void refreshGame(const ScriptGameState& state);
 };
@@ -127,6 +134,15 @@ void ScriptRuntime::Impl::start(EntityId id) {
     instance.self=luaL_ref(L,LUA_REGISTRYINDEX);
     instances.push_back(instance);
     call(instances.back(),"start");
+}
+void ScriptRuntime::Impl::updateTriggers(const ScriptGameState& state) {
+    // Flying bypasses collision, so it also leaves every trigger.
+    std::vector<EntityId> inside;
+    if(!state.flying) for(auto id:scene.entities()) if(scene.get(id)->trigger && capsuleTouches(scene,id,state.player)) inside.push_back(id);
+    auto previous=std::move(occupied);
+    occupied=inside;
+    for(auto id:previous) if(scene.get(id) && std::find(inside.begin(),inside.end(),id)==inside.end()) callOn(id,"player_exit");
+    for(auto id:inside) if(std::find(previous.begin(),previous.end(),id)==previous.end()) callOn(id,"player_enter");
 }
 void ScriptRuntime::Impl::refreshGame(const ScriptGameState& state) {
     auto* L=this->L();
@@ -156,6 +172,22 @@ ScriptRuntime::Impl* runtimeOf(lua_State* L) {
     return runtime;
 }
 EntityId& entityArg(lua_State* L,int index) {return lua::object<EntityId>(L,index,EntityType);}
+// { solid_only = bool, triggers = bool, ignore = Entity } (all optional).
+QueryFilter queryFilter(lua_State* L,int index) {
+    QueryFilter filter;
+    if(lua_isnoneornil(L,index)) return filter;
+    if(lua_type(L,index)!=LUA_TTABLE) throw std::invalid_argument("query options must be a table");
+    filter.solidOnly=lua::fieldBool(L,index,"solid_only",false);
+    filter.triggers=lua::fieldBool(L,index,"triggers",false);
+    int type=lua::pushField(L,index,"ignore");
+    struct Pop { lua_State* L; ~Pop() {lua_pop(L,1);} } pop{L};
+    if(type!=LUA_TNIL) {
+        auto* id=static_cast<EntityId*>(luaL_testudata(L,-1,EntityType));
+        if(!id) throw std::invalid_argument("ignore must be an Entity");
+        filter.ignore=*id;
+    }
+    return filter;
+}
 Entity& liveEntity(lua_State* L,int index) {return runtimeOf(L)->entity(entityArg(L,index));}
 void pushEntity(lua_State* L,EntityId id) {lua::pushObject<EntityId>(L,EntityType,id);}
 int bindRuntime(lua_State* L) {
@@ -196,6 +228,15 @@ int bindRuntime(lua_State* L) {
                       std::string effect=lua_isnoneornil(L,2) || (lua_type(L,2)==LUA_TBOOLEAN && !lua_toboolean(L,2))?std::string():lua::string(L,2,"effect");
                       if(!effect.empty() && !runtimeOf(L)->scene.effects().contains(effect)) throw std::invalid_argument("unknown effect "+effect);
                       liveEntity(L,1).effectId=effect;return 0;});}},
+        {"trigger",[](lua_State* L){return protect(L,[&]{lua_pushboolean(L,liveEntity(L,1).trigger);return 1;});},
+                   [](lua_State* L){return protect(L,[&]{
+                       if(lua_type(L,2)!=LUA_TBOOLEAN) throw std::invalid_argument("trigger must be a boolean");
+                       auto& entity=liveEntity(L,1);bool value=lua_toboolean(L,2);
+                       if(value && (entity.solid || entity.collectible || entity.goal)) throw std::invalid_argument("a trigger cannot be solid, collectible, or a goal");
+                       entity.trigger=value;return 0;});}},
+        {"player_inside",[](lua_State* L){return protect(L,[&]{
+            auto* runtime=runtimeOf(L);auto id=entityArg(L,1);runtime->entity(id);
+            lua_pushboolean(L,runtime->playerInside(id));return 1;});},nullptr},
         {"parent",[](lua_State* L){return protect(L,[&]{
             auto* runtime=runtimeOf(L);auto id=entityArg(L,1);runtime->entity(id);
             if(auto parent=runtime->scene.parent(id)) pushEntity(L,*parent); else lua_pushnil(L);
@@ -243,6 +284,26 @@ int bindRuntime(lua_State* L) {
             if(!runtime->effects) throw std::runtime_error("effects are not available in this runtime");
             runtime->effects(effect,position,yaw,entity,seed);
             return 0;});}},
+        {"raycast",[](lua_State* L){return protect(L,[&]{
+            // game.raycast(origin, direction, max_distance = 1000, options) -> hit table or nil
+            auto* runtime=runtimeOf(L);
+            auto origin=lua::vec3(L,1,"origin"),direction=lua::vec3(L,2,"direction");
+            float distance=lua_isnoneornil(L,3)?1000.0f:lua::finite(L,3,"max_distance");
+            auto hit=raycast(runtime->scene,origin,direction,distance,queryFilter(L,4));
+            if(!hit) {lua_pushnil(L);return 1;}
+            lua_createtable(L,0,4);
+            pushEntity(L,hit->entity);lua_setfield(L,-2,"entity");
+            lua::push(L,hit->point);lua_setfield(L,-2,"point");
+            lua::push(L,hit->normal);lua_setfield(L,-2,"normal");
+            lua_pushnumber(L,hit->distance);lua_setfield(L,-2,"distance");
+            return 1;});}},
+        {"overlap",[](lua_State* L){return protect(L,[&]{
+            // game.overlap(center, radius, options) -> Entity[]
+            auto* runtime=runtimeOf(L);
+            auto ids=overlapSphere(runtime->scene,lua::vec3(L,1,"center"),lua::finite(L,2,"radius"),queryFilter(L,3));
+            lua_createtable(L,int(ids.size()),0);
+            for(size_t i=0;i<ids.size();++i) {pushEntity(L,ids[i]);lua_rawseti(L,-2,lua_Integer(i+1));}
+            return 1;});}},
         {"spawn",[](lua_State* L){return protect(L,[&]{
             if(lua_type(L,1)!=LUA_TTABLE) throw std::invalid_argument("spawn() takes a table");
             Entity value;
@@ -254,6 +315,7 @@ int bindRuntime(lua_State* L) {
             value.transform.yaw=lua::fieldNumber(L,1,"yaw",0);
             value.scriptId=lua::fieldString(L,1,"script","");
             value.effectId=lua::fieldString(L,1,"effect","");
+            value.trigger=lua::fieldBool(L,1,"trigger",false);
             if(!value.effectId.empty() && !runtimeOf(L)->scene.effects().contains(value.effectId)) throw std::invalid_argument("unknown effect "+value.effectId);
             lua::pushField(L,1,"properties");
             {struct Pop { lua_State* L; ~Pop() {lua_pop(L,1);} } pop{L};value.properties=readProperties(L,-1);}
@@ -286,6 +348,7 @@ void ScriptRuntime::update(float dt,const ScriptGameState& state) {
         if(!value || value->scriptId.empty() || !impl->known.insert(handleKey(id)).second) continue;
         impl->start(id);
     }
+    impl->updateTriggers(state);
     // Index loop: callbacks may spawn entities, which start on the next tick.
     for(size_t i=0;i<impl->instances.size();++i) {
         if(!impl->scene.get(impl->instances[i].id)) continue;

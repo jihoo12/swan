@@ -31,6 +31,7 @@ void applyEdit(SceneDocument& document,std::string& selection,const SceneEdit& e
             auto* entity=scene.get(requireEntity(scene,command.key));
             entity->name=command.name;entity->meshId=command.meshId;entity->materialId=command.materialId;
             entity->solid=command.solid;entity->collectible=command.collectible;entity->goal=command.goal;
+            if(command.trigger) entity->trigger=*command.trigger;
         } else if constexpr(std::is_same_v<T,SetMaterial>) {
             if(!scene.assets().contains(command.id)) throw std::invalid_argument("Unknown editor material: "+command.id);
             scene.assets().set(command.id,command.value);

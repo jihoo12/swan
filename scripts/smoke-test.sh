@@ -169,3 +169,10 @@ hardware "$work/lantern.log"
 grep -q 'Validation errors: 0' "$work/lantern.log"
 window --scene "$lantern_scene" --overview --reload-test --resize-test --frames 90
 echo "Imported glTF materials verified"
+# Trigger volumes and raycasts: headless play-through, then a validated windowed run.
+trigger_scene=assets/scenes/trigger-garden.swan.json
+installed_trigger="$(dirname "$(readlink -f "$binary")")/../share/swan/assets/scenes/trigger-garden.swan.json"
+if [[ -f "$installed_trigger" ]]; then trigger_scene="$installed_trigger"; fi
+env -u DISPLAY -u WAYLAND_DISPLAY "$binary" script examples/scripts/trigger-bot.lua "$trigger_scene"
+window --scene "$trigger_scene" --reload-test --resize-test --frames 90
+echo "Trigger volumes verified"

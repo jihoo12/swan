@@ -1,0 +1,303 @@
+{
+  "format": "swan-scene",
+  "version": 8,
+  "spawn": [
+    0,
+    0.2,
+    6
+  ],
+  "materials": {
+    "floor": {
+      "color": [
+        0.7,
+        0.85,
+        0.9
+      ],
+      "emission": 0,
+      "texture": "courtyard",
+      "uv_scale": [
+        8,
+        8
+      ]
+    },
+    "stone": {
+      "color": [
+        0.55,
+        0.58,
+        0.6
+      ],
+      "emission": 0
+    },
+    "door": {
+      "color": [
+        0.75,
+        0.45,
+        0.2
+      ],
+      "emission": 0
+    },
+    "pad": {
+      "color": [
+        0.2,
+        0.8,
+        0.5
+      ],
+      "emission": 0.6
+    },
+    "beam": {
+      "color": [
+        0.2,
+        0.9,
+        1.0
+      ],
+      "emission": 3
+    },
+    "beam-blocked": {
+      "color": [
+        1.0,
+        0.2,
+        0.1
+      ],
+      "emission": 3
+    },
+    "pillar": {
+      "color": [
+        0.85,
+        0.8,
+        0.7
+      ],
+      "emission": 0
+    }
+  },
+  "textures": {
+    "courtyard": {
+      "source": "../textures/courtyard.png"
+    }
+  },
+  "scripts": {
+    "door_switch": {
+      "source": "../scripts/door_switch.lua"
+    },
+    "beam": {
+      "source": "../scripts/beam.lua"
+    },
+    "slider": {
+      "source": "../scripts/slider.lua"
+    }
+  },
+  "environment": {
+    "sun_direction": [
+      -0.4,
+      1,
+      0.5
+    ],
+    "shadows": 0.8
+  },
+  "entities": [
+    {
+      "id": "floor",
+      "name": "Floor",
+      "mesh": "builtin:cube",
+      "material": "floor",
+      "transform": {
+        "position": [
+          0,
+          -0.5,
+          0
+        ],
+        "scale": [
+          24,
+          1,
+          24
+        ],
+        "yaw": 0
+      },
+      "solid": true,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "wall-left",
+      "name": "Wall left",
+      "mesh": "builtin:cube",
+      "material": "stone",
+      "transform": {
+        "position": [
+          -4,
+          1.5,
+          -6
+        ],
+        "scale": [
+          6,
+          3,
+          0.6
+        ],
+        "yaw": 0
+      },
+      "solid": true,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "wall-right",
+      "name": "Wall right",
+      "mesh": "builtin:cube",
+      "material": "stone",
+      "transform": {
+        "position": [
+          4,
+          1.5,
+          -6
+        ],
+        "scale": [
+          6,
+          3,
+          0.6
+        ],
+        "yaw": 0
+      },
+      "solid": true,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "door",
+      "name": "Door",
+      "mesh": "builtin:cube",
+      "material": "door",
+      "transform": {
+        "position": [
+          0,
+          1.25,
+          -6
+        ],
+        "scale": [
+          2,
+          2.5,
+          0.4
+        ],
+        "yaw": 0
+      },
+      "solid": true,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "switch-pad",
+      "name": "Switch pad",
+      "mesh": "builtin:cube",
+      "material": "pad",
+      "transform": {
+        "position": [
+          0,
+          0.02,
+          -3.5
+        ],
+        "scale": [
+          1.6,
+          0.04,
+          1.6
+        ],
+        "yaw": 0
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "switch",
+      "name": "Door switch",
+      "mesh": "builtin:cube",
+      "material": "default",
+      "transform": {
+        "position": [
+          0,
+          1,
+          -3.5
+        ],
+        "scale": [
+          1.6,
+          2,
+          1.6
+        ],
+        "yaw": 0
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false,
+      "trigger": true,
+      "script": "door_switch"
+    },
+    {
+      "id": "beam-stop",
+      "name": "Beam stop",
+      "mesh": "builtin:cube",
+      "material": "stone",
+      "transform": {
+        "position": [
+          7,
+          1,
+          2
+        ],
+        "scale": [
+          0.6,
+          2,
+          0.6
+        ],
+        "yaw": 0
+      },
+      "solid": true,
+      "collectible": false,
+      "goal": false
+    },
+    {
+      "id": "beam",
+      "name": "Light beam",
+      "mesh": "builtin:cube",
+      "material": "beam",
+      "transform": {
+        "position": [
+          0,
+          1,
+          2
+        ],
+        "scale": [
+          14,
+          0.08,
+          0.08
+        ],
+        "yaw": 0
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false,
+      "script": "beam",
+      "properties": {
+        "range": 20
+      }
+    },
+    {
+      "id": "slider",
+      "name": "Moving pillar",
+      "mesh": "builtin:cube",
+      "material": "pillar",
+      "transform": {
+        "position": [
+          3,
+          1,
+          2
+        ],
+        "scale": [
+          0.6,
+          2,
+          0.6
+        ],
+        "yaw": 0
+      },
+      "solid": false,
+      "collectible": false,
+      "goal": false,
+      "script": "slider"
+    }
+  ]
+}

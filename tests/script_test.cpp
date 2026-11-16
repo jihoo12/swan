@@ -218,6 +218,65 @@ void fxApi() {
     require(player.scene().get(player.scene().find("caster"))->effectId.empty() && casterSpawned()==before,"entity.effect = nil did not stop emission");
     require(player.takeMessages().empty(),"Behaviour reported errors");
 }
+// Trigger volumes, raycasts, and overlaps from behaviour scripts during headless play.
+void physicsQueries() {
+    auto garden=scriptedGarden({
+        {"zone","local Z = {} function Z:player_enter() game.message('enter ' .. self.entity.key) end\n"
+                "function Z:player_exit() game.message('exit ' .. self.entity.key) end\n"
+                "function Z:update() if self.entity.player_inside and not self.seen then self.seen = true; game.message('inside') end end return Z"},
+        {"probe",R"(local P = {}
+            function P:start()
+              local hit = game.raycast(vec3(0, 5, 0), vec3(0, -1, 0))
+              assert(hit and hit.entity.key == "floor" and hit.normal.y == 1 and math.abs(hit.distance - 5) < 1e-4, "floor raycast")
+              local wall = game.raycast(vec3(0, 1, 0), vec3(0, 0, -1), 100)
+              assert(wall and wall.entity.key == "wall", "trigger skipped by default")
+              local zone = game.raycast(vec3(0, 1, 0), vec3(0, 0, -1), 100, { triggers = true })
+              assert(zone and zone.entity.key == "zone", "trigger hit on request")
+              assert(game.raycast(vec3(0, 1, 0), vec3(0, 0, -1), 1) == nil, "max distance")
+              local mine = game.raycast(vec3(0, 5, 6), vec3(0, -1, 0), 100, { ignore = self.entity })
+              assert(mine and mine.entity.key == "floor", "ignore self")
+              local near = game.overlap(vec3(0, 1, -3), 0.1, { triggers = true })
+              assert(#near == 1 and near[1].key == "zone", "overlap")
+              assert(not pcall(game.raycast, vec3(0, 0, 0), vec3(0, 0, 0)), "zero direction rejected")
+              assert(not pcall(function() self.entity.trigger = true; game.find("wall").trigger = true end), "solid trigger rejected")
+              game.message("probe ok")
+            end
+            return P)"},
+    });
+    auto add=[&](std::string key,glm::vec3 position,glm::vec3 scale,bool solid,bool trigger,std::string script) {
+        swan::Entity e;e.key=key;e.transform={position,scale,0};e.solid=solid;e.trigger=trigger;e.scriptId=script;
+        garden.scene.create(e);
+    };
+    add("zone",{0,1,-3},{2,2,2},false,true,"zone");
+    add("wall",{0,1,-12},{6,2,1},true,false,"");
+    add("probe",{0,0.5f,6},{0.5f,0.5f,0.5f},false,false,"probe");
+    garden=swan::gardenFromScene(garden.scene,{0,0.2f,0});
+    swan::Game game(std::move(garden),false);
+    auto objects=game.renderFrame().objects.size();
+    require(objects==game.scene().size()-1,"Trigger volume was rendered");
+    tick(game,1);
+    auto messages=game.takeMessages();
+    require(contains(messages,"probe ok") && !contains(messages,"enter"),"Probe queries failed or early enter");
+    // Walk forward (-Z) through the trigger: enter, inside, then exit.
+    swan::Input walk;walk.move={0,1};
+    bool entered=false,exited=false,inside=false;
+    for(int i=0;i<240 && !exited;++i) {
+        game.fixedUpdate(1.0f/120,walk);
+        auto lines=game.takeMessages();
+        if(contains(lines,"enter zone")) {require(!entered,"Enter fired twice");entered=true;}
+        inside|=contains(lines,"inside");
+        if(contains(lines,"exit zone")) {require(entered,"Exit before enter");exited=true;}
+    }
+    require(entered && inside && exited,"Trigger enter/inside/exit while walking");
+    require(game.playerFeet().z<-4,"Trigger blocked the player");
+    // Flight bypasses collision and leaves every trigger.
+    swan::Input back;back.move={0,-1};
+    for(int i=0;i<240 && !contains(game.takeMessages(),"enter zone");++i) game.fixedUpdate(1.0f/120,back);
+    game.handleInput(swan::Input{.toggleFlight=true});
+    game.fixedUpdate(1.0f/120,{});
+    require(contains(game.takeMessages(),"exit zone"),"Entering flight did not exit the trigger");
+    require(game.scripts()->failureCount()==0,"Behaviour failed");
+}
 // Read-only mesh listing with imported glTF materials; entities can use builtin:imported.
 void meshApi() {
     swan::EditorDocument document(swan::loadScene(std::string(SWAN_TEST_ASSET_DIR)+"/scenes/lantern-garden.swan.json"));
@@ -248,5 +307,6 @@ int main() {
         sceneFormat();std::cout<<"scene version 6 scripts: ok\n";
         fxApi();std::cout<<"effects, timeline, preview, and game.effect API: ok\n";
         meshApi();std::cout<<"mesh listing and imported materials: ok\n";
+        physicsQueries();std::cout<<"triggers, raycasts, and overlaps: ok\n";
     } catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
 }

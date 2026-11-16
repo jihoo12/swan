@@ -130,6 +130,7 @@ RenderFrame FxPlayer::frame(std::optional<Camera> camera) const {
     frame.objects.reserve(scene.size());
     for(auto id:scene.entities()) {
         const auto* entity=scene.get(id);
+        if(entity->trigger) continue; // Invisible volumes.
         auto look=scene.appearance(*entity);
         frame.objects.push_back({scene.worldTransform(id),look.material,scene.meshes().get(entity->meshId).data,look.texture});
     }
