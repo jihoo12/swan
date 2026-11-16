@@ -152,6 +152,7 @@ RenderFrame Game::renderFrame(float interpolation) const {
     frame.objects.reserve(garden.scene.size());
     for(auto id:garden.scene.entities()) {
         const auto* entity=garden.scene.get(id);
+        if(entity->trigger) continue; // Invisible volumes.
         auto look=garden.scene.appearance(*entity);
         frame.objects.push_back({previousPose.worldTransform(garden.scene,id,alpha),look.material,garden.scene.meshes().get(entity->meshId).data,look.texture});
     }

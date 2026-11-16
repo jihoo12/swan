@@ -84,6 +84,10 @@ target_link_libraries(hierarchy_test PRIVATE swan_demo nlohmann_json::nlohmann_j
 add_test(NAME hierarchy COMMAND hierarchy_test)
 add_test(NAME hierarchy_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/hierarchy-garden.swan.json")
 
+add_executable(physics_query_test tests/physics_query_test.cpp)
+target_link_libraries(physics_query_test PRIVATE swan_core nlohmann_json::nlohmann_json)
+add_test(NAME physics_query COMMAND physics_query_test)
+
 add_executable(shadow_test tests/shadow_test.cpp)
 target_link_libraries(shadow_test PRIVATE swan_core)
 add_test(NAME shadow COMMAND shadow_test)
@@ -133,6 +137,8 @@ target_compile_definitions(script_test PRIVATE SWAN_TEST_ASSET_DIR="${CMAKE_CURR
 add_test(NAME script COMMAND script_test)
 add_test(NAME scripted_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/scripted-garden.swan.json")
 add_test(NAME script_bot COMMAND swan script "${CMAKE_CURRENT_SOURCE_DIR}/examples/scripts/garden-bot.lua" "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/scripted-garden.swan.json")
+add_test(NAME trigger_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/trigger-garden.swan.json")
+add_test(NAME trigger_bot COMMAND swan script "${CMAKE_CURRENT_SOURCE_DIR}/examples/scripts/trigger-bot.lua" "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/trigger-garden.swan.json")
 add_test(NAME script_report COMMAND swan script "${CMAKE_CURRENT_SOURCE_DIR}/examples/scripts/scene-report.lua" "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/scripted-garden.swan.json")
 set_tests_properties(script_report PROPERTIES PASS_REGULAR_EXPRESSION "13 entities, 6 materials, 4 scripts")
 # FX automation without a GPU: regenerate the showcase into the build tree and query statistics.

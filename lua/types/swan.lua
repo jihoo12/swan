@@ -75,6 +75,8 @@ function vec2(x, y) end
 ---@field parent Entity? Read-only.
 ---@field script string Read-only.
 ---@field effect string? Attached particle effect ID; assign nil to stop emitting (live particles finish).
+---@field trigger boolean Invisible, non-solid volume that fires player_enter/player_exit.
+---@field player_inside boolean Read-only: the player was inside this trigger at the start of the tick.
 ---@field alive boolean
 local Entity = {}
 ---Remove the entity; direct children keep their world placement.
@@ -89,6 +91,8 @@ function Entity:destroy() end
 ---@field start? fun(self: Behaviour) Called once before the first update.
 ---@field update? fun(self: Behaviour, dt: number) Called every fixed tick (1/120 s).
 ---@field collected? fun(self: Behaviour) Called when the player collects this entity.
+---@field player_enter? fun(self: Behaviour) Trigger entities: the player capsule started overlapping the volume.
+---@field player_exit? fun(self: Behaviour) Trigger entities: the player left the volume (or started flying).
 
 ---@class GamePlayer
 ---@field position vec3 Feet position.
@@ -110,7 +114,19 @@ function Entity:destroy() end
 ---@field yaw? number
 ---@field script? string Starts on the next tick.
 ---@field effect? string Attached particle effect ID.
+---@field trigger? boolean Invisible trigger volume (cannot be solid, collectible, or a goal).
 ---@field properties? table<string, number|boolean|string>
+
+---@class QueryOptions
+---@field solid_only? boolean Only solid entities.
+---@field triggers? boolean Include trigger volumes (skipped by default).
+---@field ignore? Entity Skip this entity, e.g. the caster itself.
+
+---@class RayHit
+---@field entity Entity
+---@field point vec3 World-space hit point.
+---@field normal vec3 Outward box face normal.
+---@field distance number From the origin, in meters.
 
 ---Global game state, refreshed every tick (behaviour scripts only).
 ---@class Game
@@ -131,6 +147,19 @@ function game.entities() end
 ---@param spec SpawnSpec
 ---@return Entity
 function game.spawn(spec) end
+---Nearest entity collision box along a ray. Boxes containing the origin are skipped.
+---@param origin vec3
+---@param direction vec3 Any nonzero length.
+---@param max_distance? number Defaults to 1000.
+---@param options? QueryOptions
+---@return RayHit?
+function game.raycast(origin, direction, max_distance, options) end
+---Entities whose collision box intersects a sphere, in scene order.
+---@param center vec3
+---@param radius number
+---@param options? QueryOptions
+---@return Entity[]
+function game.overlap(center, radius, options) end
 
 ---@class EffectPlayOptions
 ---@field position? vec3|number[] World position, or an offset from `entity`.
@@ -160,6 +189,7 @@ function game.effect(id, options) end
 ---@field solid boolean
 ---@field collectible boolean
 ---@field goal boolean
+---@field trigger boolean
 ---@field parent string?
 ---@field script string?
 ---@field effect string?
@@ -182,6 +212,7 @@ function game.effect(id, options) end
 ---@field solid? boolean
 ---@field collectible? boolean
 ---@field goal? boolean
+---@field trigger? boolean
 ---@field script? string|false `false` removes the behaviour.
 ---@field effect? string|false Attach a particle effect; `false` detaches it.
 ---@field properties? table<string, number|boolean|string> Replaces all overrides.

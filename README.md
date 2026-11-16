@@ -280,7 +280,11 @@ end
 return Spinner
 ```
 
-A behaviour returns a table with optional `start(self)`, `update(self, dt)` (every 1/120 s tick), and `collected(self)`. `self.entity` exposes `position`, `scale`, `yaw`, `material`, `name`, `world_position`, `parent`, `alive`, and `destroy()`; the global `game` provides `time`, `collected`, `total`, `player`, `input`, `message()`, `find()`, `entities()`, and `spawn{...}`. Behaviours modify only the runtime copy of the scene, never authored data.
+A behaviour returns a table with optional `start(self)`, `update(self, dt)` (every 1/120 s tick), `collected(self)`, and, on trigger entities, `player_enter(self)` and `player_exit(self)`. `self.entity` exposes `position`, `scale`, `yaw`, `material`, `name`, `world_position`, `parent`, `trigger`, `player_inside`, `alive`, and `destroy()`; the global `game` provides `time`, `collected`, `total`, `player`, `input`, `message()`, `find()`, `entities()`, `spawn{...}`, `raycast(origin, direction, max_distance, options)`, and `overlap(center, radius, options)`. Behaviours modify only the runtime copy of the scene, never authored data.
+
+Queries and triggers use each entity's collision box: its mesh bounds under the world transform, the same yaw-rotated box the player collides with (not the triangle surface). `game.raycast` returns the nearest `{ entity, point, normal, distance }` or `nil`, skipping boxes that contain the origin; `options` take `solid_only`, `triggers` (trigger volumes are skipped by default), and `ignore = entity`. Trigger enter/exit is checked once per tick against the player capsule before `update` runs; flight leaves every trigger. The player is not an entity, so rays and overlaps never return it; use `game.player.position`.
+
+![A raycast beam stopped by a moving pillar in the trigger garden](docs/trigger-garden.png)
 
 Behaviours run sandboxed: only `base`, `coroutine`, `math`, `string`, `table`, and `utf8` are available, chunks must be text, each callback has a 5-million-instruction budget, and the VM is capped at 64 MiB. An error, an infinite loop, or a syntax error stops only that entity's behaviour and is reported on stdout. `assets/scenes/scripted-garden.swan.json` uses four sample behaviours: a pulsing pedestal, shards that announce progress, and a gate that opens over a spinning reward once every shard is collected.
 

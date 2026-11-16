@@ -142,6 +142,7 @@ void pushEntity(lua_State* L,const Scene& scene,EntityId id) {
     lua_pushnumber(L,e.transform.yaw);lua::set(L,t,"yaw");
     lua::push(L,scene.worldTransform(id).position);lua::set(L,t,"world_position");
     lua_pushboolean(L,e.solid);lua::set(L,t,"solid");lua_pushboolean(L,e.collectible);lua::set(L,t,"collectible");lua_pushboolean(L,e.goal);lua::set(L,t,"goal");
+    lua_pushboolean(L,e.trigger);lua::set(L,t,"trigger");
     if(auto parent=scene.parent(id)) {lua::push(L,scene.get(*parent)->key);lua::set(L,t,"parent");}
     if(!e.scriptId.empty()) {lua::push(L,e.scriptId);lua::set(L,t,"script");}
     if(!e.effectId.empty()) {lua::push(L,e.effectId);lua::set(L,t,"effect");}
@@ -275,6 +276,7 @@ int bindTypes(lua_State* L) {
                 if(auto v=lua::fieldVec3(L,2,"scale")) e.transform.scale=*v;
                 e.transform.yaw=lua::fieldNumber(L,2,"yaw",0);
                 e.solid=lua::fieldBool(L,2,"solid",false);e.collectible=lua::fieldBool(L,2,"collectible",false);e.goal=lua::fieldBool(L,2,"goal",false);
+                e.trigger=lua::fieldBool(L,2,"trigger",false);
                 e.scriptId=lua::fieldString(L,2,"script","");e.properties=fieldProperties(L,2,"properties");
                 e.effectId=lua::fieldString(L,2,"effect","");
                 if(lua::present(L,2,"parent")) parent=lua::fieldString(L,2,"parent","");
@@ -293,11 +295,11 @@ int bindTypes(lua_State* L) {
             t.yaw=lua::fieldNumber(L,3,"yaw",t.yaw);
             if(lua::present(L,3,"position") || lua::present(L,3,"scale") || lua::present(L,3,"yaw")) edits.push_back(SetTransform{key,t});
             bool props=false;
-            for(const char* field:{"name","mesh","material","solid","collectible","goal"}) props|=lua::present(L,3,field);
+            for(const char* field:{"name","mesh","material","solid","collectible","goal","trigger"}) props|=lua::present(L,3,field);
             if(props) {
                 e.name=lua::fieldString(L,3,"name",e.name);e.meshId=lua::fieldString(L,3,"mesh",e.meshId);e.materialId=lua::fieldString(L,3,"material",e.materialId);
                 e.solid=lua::fieldBool(L,3,"solid",e.solid);e.collectible=lua::fieldBool(L,3,"collectible",e.collectible);e.goal=lua::fieldBool(L,3,"goal",e.goal);
-                edits.push_back(SetEntityProperties{key,e.name,e.meshId,e.materialId,e.solid,e.collectible,e.goal});
+                edits.push_back(SetEntityProperties{key,e.name,e.meshId,e.materialId,e.solid,e.collectible,e.goal,lua::fieldBool(L,3,"trigger",e.trigger)});
             }
             if(lua::present(L,3,"script") || lua::present(L,3,"properties")) {
                 // script = false removes the behaviour.

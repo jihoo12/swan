@@ -4,7 +4,7 @@
 #include <variant>
 namespace swan {
 struct SetTransform { std::string key; Transform value; };
-struct SetEntityProperties { std::string key,name,meshId,materialId; bool solid=false,collectible=false,goal=false; };
+struct SetEntityProperties { std::string key,name,meshId,materialId; bool solid=false,collectible=false,goal=false; std::optional<bool> trigger; /* nullopt: unchanged */ };
 struct SetMaterial { std::string id; Material value; };
 struct CreateMaterial { std::string id; Material value; };
 struct SetParent { std::string key; std::optional<std::string> parent; };

@@ -120,7 +120,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
         for(size_t i=0;i<entities.size();++i) {
             try {
                 const auto& source=entities[i];
-                keys(source,{"id","name","mesh","material","transform","solid","collectible","goal","animation","parent","script","properties","effect"});
+                keys(source,{"id","name","mesh","material","transform","solid","collectible","goal","trigger","animation","parent","script","properties","effect"});
                 Entity entity;
                 entity.key=source.at("id").get<std::string>();
                 if(entity.key.empty()) throw std::invalid_argument("Entity ID cannot be empty");
@@ -148,6 +148,11 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
                             else throw std::invalid_argument("Script property must be a number, boolean, or string: "+it.key());
                         }
                     }
+                }
+                if(source.contains("trigger")) {
+                    if(root.at("version")<8) throw std::invalid_argument("Trigger volumes require scene version 8");
+                    if(!source.at("trigger").is_boolean()) throw std::invalid_argument("Entity trigger must be a boolean");
+                    entity.trigger=source.at("trigger").get<bool>();
                 }
                 if(source.contains("effect")) {
                     if(root.at("version")<7) throw std::invalid_argument("Entity effects require scene version 7");
@@ -215,6 +220,7 @@ std::string serializeScene(const SceneDocument& document,const std::filesystem::
         if(auto parent=document.scene.parent(id)) entity["parent"]=document.scene.get(*parent)->key;
         if(!e.scriptId.empty()) entity["script"]=e.scriptId;
         if(!e.effectId.empty()) entity["effect"]=e.effectId;
+        if(e.trigger) entity["trigger"]=true;
         if(!e.properties.empty()) {
             entity["properties"]=Json::object();
             for(const auto& [name,value]:e.properties) std::visit([&](const auto& v){entity["properties"][name]=v;},value);

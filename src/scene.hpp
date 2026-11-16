@@ -46,6 +46,7 @@ struct Entity {
     std::string meshId="builtin:cube";
     bool goal=false;
     bool solid=false,collectible=false;
+    bool trigger=false;            // Invisible, non-solid volume; fires player_enter/player_exit.
     std::optional<Animation> animation;
     std::string scriptId;          // Empty: no behaviour script.
     ScriptProperties properties;   // At most 32; keys 1..64 characters.
