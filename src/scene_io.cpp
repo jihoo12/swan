@@ -127,6 +127,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
                 entity.name=source.at("name").get<std::string>();
                 entity.meshId=source.at("mesh").get<std::string>();
                 entity.materialId=source.at("material").get<std::string>();
+                if(entity.materialId==importedMaterialId && root.at("version")<8) throw std::invalid_argument("Material builtin:imported requires scene version 8");
                 const auto& transform=source.at("transform"); keys(transform,{"position","scale","yaw"});
                 entity.transform={vector(transform.at("position")),vector(transform.at("scale")),number(transform.at("yaw"))};
                 entity.solid=source.value("solid",false); entity.collectible=source.value("collectible",false); entity.goal=source.value("goal",false);

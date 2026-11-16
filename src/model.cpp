@@ -2,8 +2,12 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include <assimp/GltfMaterial.h>
 #include <glm/gtc/matrix_inverse.hpp>
+#include <algorithm>
+#include <fstream>
 #include <functional>
+#include <map>
 #include <cmath>
 #include <stdexcept>
 namespace swan {
@@ -12,6 +16,53 @@ glm::mat4 matrix(const aiMatrix4x4& m) {
     return {{m.a1,m.b1,m.c1,m.d1},{m.a2,m.b2,m.c2,m.d2},{m.a3,m.b3,m.c3,m.d3},{m.a4,m.b4,m.c4,m.d4}};
 }
 bool finite(glm::vec3 v) {return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);}
+bool hasTexture(const aiMaterial& material,aiTextureType type) {return material.GetTextureCount(type)>0;}
+// Base color texture: embedded (GLB / data URI) or an external file next to the model.
+SharedTexture baseColorTexture(const aiScene& scene,const aiMaterial& material,const std::filesystem::path& model,ImportedMaterial& out) {
+    aiString path;unsigned uvIndex=0;
+    aiTextureType type=hasTexture(material,aiTextureType_BASE_COLOR)?aiTextureType_BASE_COLOR:aiTextureType_DIFFUSE;
+    if(material.GetTexture(type,0,&path,nullptr,&uvIndex)!=AI_SUCCESS) return nullptr;
+    if(uvIndex!=0) {out.unsupported.push_back("base color texture uses TEXCOORD_"+std::to_string(uvIndex));return nullptr;}
+    std::string name=path.C_Str();
+    if(const auto* embedded=scene.GetEmbeddedTexture(path.C_Str())) {
+        if(embedded->mHeight!=0) {out.unsupported.push_back("uncompressed embedded texture");return nullptr;}
+        std::span<const uint8_t> bytes(reinterpret_cast<const uint8_t*>(embedded->pcData),embedded->mWidth);
+        if(!isPng(bytes)) {out.unsupported.push_back(std::string("base color texture format '")+embedded->achFormatHint+"' (only PNG)");return nullptr;}
+        return decodePngTexture(bytes);
+    }
+    auto file=model.parent_path()/std::filesystem::path(name);
+    std::ifstream input(file,std::ios::binary);
+    if(!input) throw std::invalid_argument("Cannot open glTF texture: "+file.string());
+    char signature[8]{};input.read(signature,8);
+    if(!isPng({reinterpret_cast<const uint8_t*>(signature),size_t(input.gcount())})) {
+        out.unsupported.push_back("base color texture '"+name+"' is not PNG");return nullptr;
+    }
+    return loadPngTexture(file);
+}
+SharedImportedMaterial convertMaterial(const aiScene& scene,const aiMaterial& material,const std::filesystem::path& model) {
+    auto out=std::make_shared<ImportedMaterial>();
+    aiString name;if(material.Get(AI_MATKEY_NAME,name)==AI_SUCCESS) out->name=name.C_Str();
+    aiColor4D base(1,1,1,1);
+    if(material.Get(AI_MATKEY_BASE_COLOR,base)!=AI_SUCCESS) material.Get(AI_MATKEY_COLOR_DIFFUSE,base);
+    out->color={base.r,base.g,base.b};
+    if(!finite(out->color) || base.r<0 || base.g<0 || base.b<0) throw std::invalid_argument("Invalid glTF base color factor");
+    aiString alphaMode;
+    if(base.a<1 || (material.Get(AI_MATKEY_GLTF_ALPHAMODE,alphaMode)==AI_SUCCESS && std::string(alphaMode.C_Str())!="OPAQUE"))
+        out->unsupported.push_back("transparency (drawn opaque)");
+    aiColor3D emissive(0,0,0);material.Get(AI_MATKEY_COLOR_EMISSIVE,emissive);
+    float strength=1;material.Get(AI_MATKEY_EMISSIVE_INTENSITY,strength);
+    float glow=std::max({emissive.r,emissive.g,emissive.b})*strength;
+    if(!std::isfinite(glow) || glow<0) throw std::invalid_argument("Invalid glTF emissive factor");
+    // Swan emission scales the surface color; match the brightest emissive channel.
+    if(glow>0) out->emission=std::min(64.0f,glow/std::max(std::max({out->color.r,out->color.g,out->color.b}),0.05f));
+    out->texture=baseColorTexture(scene,material,model,*out);
+    if(hasTexture(material,aiTextureType_NORMALS)) out->unsupported.push_back("normal texture");
+    if(hasTexture(material,aiTextureType_EMISSIVE)) out->unsupported.push_back("emissive texture");
+    if(hasTexture(material,aiTextureType_METALNESS) || hasTexture(material,aiTextureType_DIFFUSE_ROUGHNESS) || hasTexture(material,aiTextureType_GLTF_METALLIC_ROUGHNESS))
+        out->unsupported.push_back("metallic-roughness texture");
+    if(hasTexture(material,aiTextureType_LIGHTMAP) || hasTexture(material,aiTextureType_AMBIENT_OCCLUSION)) out->unsupported.push_back("occlusion texture");
+    return out;
+}
 }
 StaticModel loadStaticGltf(const std::filesystem::path& path) {
     try {
@@ -26,6 +77,13 @@ StaticModel loadStaticGltf(const std::filesystem::path& path) {
             if(scene->mMeshes[i]->HasBones() || scene->mMeshes[i]->mNumAnimMeshes)
                 throw std::invalid_argument("Skinning/morph targets are unsupported by the static importer");
         StaticModel model;size_t corners=0,visited=0;
+        std::map<unsigned,SharedImportedMaterial> materials;
+        auto materialFor=[&](unsigned index) {
+            if(index>=scene->mNumMaterials) throw std::invalid_argument("Invalid glTF material index");
+            auto found=materials.find(index);
+            if(found==materials.end()) found=materials.emplace(index,convertMaterial(*scene,*scene->mMaterials[index],path)).first;
+            return found->second;
+        };
         std::function<void(const aiNode*,glm::mat4,size_t)> visit=[&](const aiNode* node,glm::mat4 parent,size_t depth) {
             if(depth>64 || ++visited>10000) throw std::invalid_argument("glTF node hierarchy exceeds limits");
             auto world=parent*matrix(node->mTransformation);
@@ -70,6 +128,14 @@ StaticModel loadStaticGltf(const std::filesystem::path& path) {
                 }
                 mesh->minimum=mesh->maximum=mesh->vertices.front().position;
                 for(const auto& vertex:mesh->vertices) {mesh->minimum=glm::min(mesh->minimum,vertex.position);mesh->maximum=glm::max(mesh->maximum,vertex.position);}
+                if(!source->HasTextureCoords(0)) {
+                    auto material=materialFor(source->mMaterialIndex);
+                    if(material->texture) {
+                        auto copy=std::make_shared<ImportedMaterial>(*material);copy->texture=nullptr;
+                        copy->unsupported.push_back("base color texture on a primitive without TEXCOORD_0");
+                        model.materials.push_back(std::move(copy));
+                    } else model.materials.push_back(std::move(material));
+                } else model.materials.push_back(materialFor(source->mMaterialIndex));
                 model.parts.push_back(std::move(mesh));
             }
             for(unsigned child=0;child<node->mNumChildren;++child) visit(node->mChildren[child],world,depth+1);

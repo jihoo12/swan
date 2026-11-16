@@ -152,7 +152,8 @@ RenderFrame Game::renderFrame(float interpolation) const {
     frame.objects.reserve(garden.scene.size());
     for(auto id:garden.scene.entities()) {
         const auto* entity=garden.scene.get(id);
-        frame.objects.push_back({previousPose.worldTransform(garden.scene,id,alpha),garden.scene.assets().get(entity->materialId),garden.scene.meshes().get(entity->meshId).data,garden.scene.textures().get(garden.scene.assets().get(entity->materialId).textureId).data});
+        auto look=garden.scene.appearance(*entity);
+        frame.objects.push_back({previousPose.worldTransform(garden.scene,id,alpha),look.material,garden.scene.meshes().get(entity->meshId).data,look.texture});
     }
     fx->appendTo(frame,garden.scene);
     if(thirdPerson && !flight) {

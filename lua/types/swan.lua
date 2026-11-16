@@ -187,6 +187,18 @@ function game.effect(id, options) end
 ---@field properties? table<string, number|boolean|string> Replaces all overrides.
 ---@field parent? string|false Keeps the local transform; see Document:reparent().
 
+---@class ImportedMaterialInfo
+---@field name string glTF material name (may be empty).
+---@field color vec3 Base color factor.
+---@field emission number Emission as a multiple of the surface color.
+---@field textured boolean Whether a PNG base color texture was imported.
+---@field unsupported string[] glTF features present but not drawn.
+
+---@class MeshInfo
+---@field source string Empty for built-in meshes.
+---@field part integer glTF part index (0 otherwise).
+---@field material? ImportedMaterialInfo glTF parts only.
+
 ---@class MaterialSpec
 ---@field base? string Copy this material first (create_material only).
 ---@field color? vec3|number[]
@@ -316,8 +328,12 @@ function Document:reparent(key, parent) end
 function Document:delete(key) end
 ---@param key? string
 function Document:select(key) end
+---Catalog materials. "builtin:imported" is not listed: entities using it take their glTF
+---mesh part's own material (see Document:meshes()).
 ---@return table<string, MaterialSpec>
 function Document:materials() end
+---@return table<string, MeshInfo>
+function Document:meshes() end
 ---@param id string
 ---@param changes MaterialSpec
 function Document:set_material(id, changes) end

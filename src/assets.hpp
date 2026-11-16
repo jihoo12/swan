@@ -7,7 +7,8 @@
 #include <memory>
 #include <string>
 namespace swan {
-struct MeshAsset { std::filesystem::path source; SharedMesh data; uint32_t part=0; };
+// `material`: the glTF part's own material (null for OBJ and built-in meshes).
+struct MeshAsset { std::filesystem::path source; SharedMesh data; uint32_t part=0; SharedImportedMaterial material; };
 class MeshAssets {
 public:
     MeshAssets();
@@ -64,12 +65,15 @@ struct Material {
     glm::vec2 uvScale{1};
 };
 // Stable material names are shared by scene entities and serialized files.
+// `builtin:imported` is a reserved, read-only ID: an entity using it takes its glTF mesh
+// part's own material (white for meshes without one). It is not listed in entries().
+inline constexpr const char* importedMaterialId="builtin:imported";
 class MaterialAssets {
 public:
     MaterialAssets();
     void set(std::string id,Material material);
     const Material& get(const std::string& id) const;
-    bool contains(const std::string& id) const { return materials.contains(id); }
+    bool contains(const std::string& id) const { return id==importedMaterialId || materials.contains(id); }
     const std::map<std::string,Material>& entries() const { return materials; }
 private:
     std::map<std::string,Material> materials;

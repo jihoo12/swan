@@ -218,6 +218,27 @@ void fxApi() {
     require(player.scene().get(player.scene().find("caster"))->effectId.empty() && casterSpawned()==before,"entity.effect = nil did not stop emission");
     require(player.takeMessages().empty(),"Behaviour reported errors");
 }
+// Read-only mesh listing with imported glTF materials; entities can use builtin:imported.
+void meshApi() {
+    swan::EditorDocument document(swan::loadScene(std::string(SWAN_TEST_ASSET_DIR)+"/scenes/lantern-garden.swan.json"));
+    swan::ScriptEngine engine(swan::ScriptEngine::Mode::Tool,[](const std::string&){});
+    swan::bindScriptApi(engine);
+    swan::bindDocument(engine,"doc",document);
+    auto result=engine.run(R"(
+        local meshes = doc:meshes()
+        assert(meshes["builtin:cube"].source == "" and meshes["builtin:cube"].material == nil, "built-in mesh")
+        local body = meshes["lantern-body"]
+        assert(body.part == 1 and body.material.name == "painted" and body.material.textured, "textured part")
+        local cap = meshes["lantern-glb-cap"].material
+        assert(#cap.unsupported == 2, "unsupported glass features: " .. #cap.unsupported)
+        assert(meshes["lantern-flame"].material.emission == 4, "flame emission")
+        assert(doc:materials()["builtin:imported"] == nil, "reserved material is not listed")
+        local key = doc:create{ name = "Extra", mesh = "lantern-flame", material = "builtin:imported" }
+        assert(doc:entity(key).material == "builtin:imported", "create with imported material")
+        assert(not pcall(doc.set_material, doc, "builtin:imported", { color = { 1, 0, 0 } }), "reserved material is read-only")
+    )","mesh-api");
+    if(!result.ok) throw std::runtime_error("Mesh API failed: "+result.error);
+}
 int main() {
     try {
         engineSandbox();std::cout<<"sandbox, limits, vec math: ok\n";
@@ -226,5 +247,6 @@ int main() {
         toolApi();std::cout<<"automation API and transactions: ok\n";
         sceneFormat();std::cout<<"scene version 6 scripts: ok\n";
         fxApi();std::cout<<"effects, timeline, preview, and game.effect API: ok\n";
+        meshApi();std::cout<<"mesh listing and imported materials: ok\n";
     } catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
 }
