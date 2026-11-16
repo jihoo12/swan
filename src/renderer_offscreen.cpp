@@ -60,7 +60,7 @@ TextureData VulkanRenderer::renderImage(const RenderFrame& frame,glm::uvec2 size
     checked(vkResetFences(device,1,&fence),"Reset render fence");
     checked(vkQueueSubmit(queue,1,&submit,fence),"Submit offscreen render");
     checked(vkWaitForFences(device,1,&fence,true,UINT64_MAX),"Wait offscreen render");
-    ++renderedFrames; submittedObjects+=frameVisible; culledObjects+=frameCulled;
+    ++renderedFrames; submittedObjects+=frameVisible; culledObjects+=frameCulled; totalShadowCasters+=shadowCasters;
     TextureData image{size.x,size.y,std::vector<uint8_t>(size_t(bytes))};
     void* mapped=nullptr;
     checked(vkMapMemory(device,readbackMemory,0,VK_WHOLE_SIZE,0,&mapped),"Map readback");

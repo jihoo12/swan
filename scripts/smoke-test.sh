@@ -145,3 +145,17 @@ print(f'FX renders verified: sheet, {len(frames)} sequence frames, script sheet'
 PY
 window --scene "$fx_scene" --overview --frames 90 --resize-test --reload-test | tee "$work/fx-game.log"
 grep -Eq 'Particles drawn: [1-9]' "$work/fx-game.log"
+# Sun shadows: the default garden draws shadow casters; a scene with shadows off draws none.
+window --frames 15 >"$work/shadows.log" 2>&1
+grep -Eq 'Shadow casters drawn: [1-9]' "$work/shadows.log" || { cat "$work/shadows.log"; echo "FAIL: no shadow casters drawn" >&2; exit 1; }
+python3 - "$work/garden.swan.json" "$work/no-shadows.json" <<'PY'
+import json
+import sys
+scene = json.load(open(sys.argv[1]))
+scene.setdefault('environment', {})['shadows'] = 0
+json.dump(scene, open(sys.argv[2], 'w'))
+PY
+env -u DISPLAY -u WAYLAND_DISPLAY timeout 120s "$binary" render "$work/no-shadows.json" --validation --time 1 --size 320x180 -o "$work/no-shadows.png" 2>"$work/no-shadows.log" || { cat "$work/no-shadows.log"; exit 1; }
+hardware "$work/no-shadows.log"
+grep -q 'Shadow casters drawn: 0' "$work/no-shadows.log" && grep -q 'Validation errors: 0' "$work/no-shadows.log"
+echo "Sun shadows verified"

@@ -94,7 +94,7 @@ void VulkanRenderer::initialize() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,18,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
+    app.pApplicationName="Swan"; app.applicationVersion=VK_MAKE_VERSION(0,19,0); app.pEngineName="Swan"; app.apiVersion=VK_API_VERSION_1_3;
     VkDebugUtilsMessengerCreateInfoEXT dbg{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     dbg.messageSeverity=VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
     dbg.messageType=VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT|VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
@@ -259,12 +259,15 @@ void VulkanRenderer::createPipeline() {
         check(vkCreateGraphicsPipelines(device,VK_NULL_HANDLE,1,&ci,nullptr,&pipeline),"Graphics pipeline");
     } catch(...) { if(frag) vkDestroyShaderModule(device,frag,nullptr); vkDestroyShaderModule(device,vert,nullptr); throw; }
     vkDestroyShaderModule(device,frag,nullptr); vkDestroyShaderModule(device,vert,nullptr);
+    createShadowPipeline();
     createParticlePipelines();
     createPostPipelines();
 }
 void VulkanRenderer::destroySwapchain() {
     if(pipeline) vkDestroyPipeline(device,pipeline,nullptr);
     pipeline=VK_NULL_HANDLE;
+    if(shadowPipeline) vkDestroyPipeline(device,shadowPipeline,nullptr);
+    shadowPipeline=VK_NULL_HANDLE;
     if(particleAdditive) vkDestroyPipeline(device,particleAdditive,nullptr);
     if(particleAlpha) vkDestroyPipeline(device,particleAlpha,nullptr);
     particleAdditive=particleAlpha=VK_NULL_HANDLE;
@@ -322,6 +325,7 @@ void VulkanRenderer::finish() {
     out << "Texture uploads: " << uploadedTextures << "; resident textures: " << gpuTextures.size() << '\n';
     out << "Draw statistics: frames=" << renderedFrames << " submitted=" << submittedObjects << " culled=" << culledObjects << '\n';
     out << "Particles drawn: " << drawnParticles << '\n';
+    out << "Shadow casters drawn: " << totalShadowCasters << '\n';
     out << "Validation errors: " << validationErrors << '\n';
     if(validationErrors) throw std::runtime_error("Vulkan validation reported errors");
 }
@@ -350,8 +354,11 @@ void VulkanRenderer::synchronizeMeshes(const RenderFrame& frame) {
 void VulkanRenderer::recordScene(const RenderFrame& frame,VkImageView output,VkExtent2D size) {
     // Called after the frame fence, so the previous targets and uniforms are idle.
     if(post.extent.width!=size.width || post.extent.height!=size.height) {destroyPostTargets();createPostTargets(size);}
-    auto vp=frame.camera.viewProjection(float(size.width)/float(size.height));
-    writeFrameUniforms(frame,vp);
+    float aspect=float(size.width)/float(size.height);
+    auto vp=frame.camera.viewProjection(aspect);
+    auto shadow=fitSunShadow(frame.camera,aspect,frame.environment,frame.objects,shadowResolution);
+    writeFrameUniforms(frame,vp,shadow);
+    recordShadows(frame,shadow.viewProjection);
     VkImageAspectFlags depthAspect=VK_IMAGE_ASPECT_DEPTH_BIT|(depthFormat==VK_FORMAT_D24_UNORM_S8_UINT?VK_IMAGE_ASPECT_STENCIL_BIT:0);
     auto hdr=barrier(post.hdr.image,VK_IMAGE_ASPECT_COLOR_BIT,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,0,VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
     auto depthTarget=barrier(post.depth.image,depthAspect,VK_IMAGE_LAYOUT_UNDEFINED,VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
@@ -414,14 +421,14 @@ void VulkanRenderer::draw(const RenderFrame& frame) {
     VkPipelineStageFlags waitStage=VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO}; submit.waitSemaphoreCount=1; submit.pWaitSemaphores=&acquired; submit.pWaitDstStageMask=&waitStage; submit.commandBufferCount=1; submit.pCommandBuffers=&command; submit.signalSemaphoreCount=1; submit.pSignalSemaphores=&presentReady[index];
     check(vkResetFences(device,1,&fence),"Reset frame fence"); check(vkQueueSubmit(queue,1,&submit,fence),"Submit frame");
-    ++renderedFrames; submittedObjects+=frameVisible; culledObjects+=frameCulled;
+    ++renderedFrames; submittedObjects+=frameVisible; culledObjects+=frameCulled; totalShadowCasters+=shadowCasters;
     VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR}; present.waitSemaphoreCount=1; present.pWaitSemaphores=&presentReady[index]; present.swapchainCount=1; present.pSwapchains=&swapchain; present.pImageIndices=&index;
     result=vkQueuePresentKHR(queue,&present);
     if(result==VK_ERROR_OUT_OF_DATE_KHR || result==VK_SUBOPTIMAL_KHR || suboptimal) rebuild(); else check(result,"Present");
 }
 void VulkanRenderer::cleanup() {
     if(device) {
-        vkDeviceWaitIdle(device); destroySceneTarget(); destroySwapchain(); releaseParticles(); releaseReadback(); destroyPostTargets();
+        vkDeviceWaitIdle(device); destroySceneTarget(); destroySwapchain(); releaseParticles(); releaseReadback(); destroyPostTargets(); destroyShadowResources();
         if(postLayout) vkDestroyPipelineLayout(device,postLayout,nullptr);
         if(postSampler) vkDestroySampler(device,postSampler,nullptr);
         if(postPool) vkDestroyDescriptorPool(device,postPool,nullptr);

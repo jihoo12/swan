@@ -1,5 +1,6 @@
 #include "editor_document.hpp"
 #include "fx_io.hpp"
+#include "fx_json.hpp"
 #include "fx_runtime.hpp"
 #include "image.hpp"
 #include "scene_io.hpp"
@@ -185,11 +186,36 @@ void documents() {
     auto json=Json::parse(swan::serializeScene(editor.document()));
     json["version"]=6;
     rejects([&]{swan::parseScene(json.dump());},"version 7");
-    json["version"]=8;
+    json["version"]=9;
     rejects([&]{swan::parseScene(json.dump());},"Unsupported");
     json["version"]=7;json["effects"]["pop"]["emitters"][0]["bursts"]=Json::array({Json::array({0,-1})});
     rejects([&]{swan::parseScene(json.dump());},"Effect pop");
     std::filesystem::remove_all(directory);
+}
+// Sun direction and shadow settings: version 8 schema, validation, round trip, and undo.
+void shadowEnvironment() {
+    swan::EditorDocument editor(swan::SceneDocument{});
+    auto environment=editor.document().scene.environment();
+    environment.sunDirection={0.2f,1,-0.4f};environment.shadows=0.5f;environment.shadowDistance=25;
+    editor.apply(swan::SetEnvironment{environment});
+    auto text=swan::serializeScene(editor.document());
+    auto json=Json::parse(text);
+    require(json["version"]==8 && json["environment"]["shadows"]==0.5 && json["environment"]["shadow_distance"]==25,"Shadow environment export");
+    auto loaded=swan::parseScene(text);
+    require(loaded.scene.environment()==editor.document().scene.environment(),"Shadow environment round trip");
+    require(editor.undo() && editor.document().scene.environment()==swan::Environment{},"Undo shadow environment");
+    // Version 7 files keep loading but cannot use the new keys.
+    auto legacy=json;legacy["version"]=7;
+    rejects([&]{swan::parseScene(legacy.dump());},"version 8");
+    legacy["environment"].erase("sun_direction");legacy["environment"].erase("shadows");legacy["environment"].erase("shadow_distance");
+    require(swan::parseScene(legacy.dump()).scene.environment().shadows==swan::Environment{}.shadows,"Version 7 environment uses default shadows");
+    auto base=editor.document().scene.environment();
+    rejects([&]{swan::environmentFromJson(Json::parse(R"({"shadows":1.5})"),base);},"0..1");
+    rejects([&]{swan::environmentFromJson(Json::parse(R"({"shadows":-0.1})"),base);},"0..1");
+    rejects([&]{swan::environmentFromJson(Json::parse(R"({"shadow_distance":0.5})"),base);},"1..1000");
+    rejects([&]{swan::environmentFromJson(Json::parse(R"({"sun_direction":[0,0,0]})"),base);},"nonzero");
+    rejects([&]{swan::environmentFromJson(Json::parse(R"({"sun_direction":[0,1]})"),base);},"sun_direction");
+    require(swan::environmentFromJson(Json::parse(R"({"shadows":0})"),base).shadows==0,"Shadows can be disabled");
 }
 void images() {
     swan::TextureData image{4,2,std::vector<uint8_t>(4*2*4,0)};
@@ -216,6 +242,7 @@ int main() {
         attachedAndLocal();std::cout<<"attached and local emitters: ok\n";
         timeline();std::cout<<"timeline tracks, events, camera: ok\n";
         documents();std::cout<<"editor commands and scene version 7: ok\n";
+        shadowEnvironment();std::cout<<"shadow environment schema: ok\n";
         images();std::cout<<"image helpers: ok\n";
     } catch(const std::exception& error) {std::cerr<<error.what()<<'\n';return 1;}
 }

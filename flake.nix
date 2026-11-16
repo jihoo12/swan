@@ -9,7 +9,7 @@
       eachSystem = f: nixpkgs.lib.genAttrs systems (system: f (import nixpkgs { inherit system; }));
       build = pkgs: pkgs.stdenv.mkDerivation {
         pname = "swan";
-        version = "0.18.0";
+        version = "0.19.0";
         src = pkgs.lib.cleanSourceWith {
           src = self;
           filter = path: type:

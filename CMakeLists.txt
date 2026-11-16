@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(swan VERSION 0.18.0 LANGUAGES CXX)
+project(swan VERSION 0.19.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Vulkan REQUIRED)
@@ -13,7 +13,7 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua5.4)
 find_program(GLSLANG_VALIDATOR glslangValidator REQUIRED)
 include(GNUInstallDirs)
-foreach(shader scene.vert scene.frag particle.vert particle.frag post.vert post.frag)
+foreach(shader scene.vert scene.frag shadow.vert particle.vert particle.frag post.vert post.frag)
   set(output "${CMAKE_CURRENT_BINARY_DIR}/shaders/${shader}.spv")
   add_custom_command(OUTPUT "${output}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders"
@@ -23,7 +23,7 @@ foreach(shader scene.vert scene.frag particle.vert particle.frag post.vert post.
 endforeach()
 add_custom_target(swan_shaders ALL DEPENDS ${SHADERS})
 add_library(swan_core src/resources.cpp src/assets.cpp src/texture.cpp src/mesh.cpp src/scene.cpp src/scene_io.cpp src/physics.cpp src/visibility.cpp src/render_pose.cpp src/camera_rig.cpp src/model.cpp src/editor_document.cpp
-  src/fx.cpp src/fx_io.cpp src/fx_runtime.cpp src/timeline.cpp src/image.cpp)
+  src/fx.cpp src/fx_io.cpp src/fx_runtime.cpp src/timeline.cpp src/image.cpp src/shadow.cpp)
 target_include_directories(swan_core PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/swan>)
 target_link_libraries(swan_core PUBLIC glm::glm PRIVATE nlohmann_json::nlohmann_json tinyobjloader::tinyobjloader PNG::PNG assimp::assimp)
@@ -37,7 +37,7 @@ add_library(swan_demo src/garden.cpp src/game.cpp)
 target_link_libraries(swan_demo PUBLIC swan_core PRIVATE swan_script)
 target_compile_options(swan_demo PRIVATE -Wall -Wextra -Wpedantic)
 add_library(swan_renderer src/renderer.cpp src/renderer_texture.cpp src/renderer_mesh.cpp src/renderer_target.cpp
-  src/renderer_particles.cpp src/renderer_offscreen.cpp src/renderer_post.cpp)
+  src/renderer_particles.cpp src/renderer_offscreen.cpp src/renderer_post.cpp src/renderer_shadow.cpp)
 add_dependencies(swan_renderer swan_shaders)
 target_link_libraries(swan_renderer PUBLIC swan_core Vulkan::Vulkan glfw)
 target_compile_definitions(swan_renderer PRIVATE SWAN_SHADER_DIR="${CMAKE_CURRENT_BINARY_DIR}/shaders")
@@ -83,6 +83,10 @@ add_executable(hierarchy_test tests/hierarchy_test.cpp)
 target_link_libraries(hierarchy_test PRIVATE swan_demo nlohmann_json::nlohmann_json)
 add_test(NAME hierarchy COMMAND hierarchy_test)
 add_test(NAME hierarchy_scene COMMAND swan --validate-scene "${CMAKE_CURRENT_SOURCE_DIR}/assets/scenes/hierarchy-garden.swan.json")
+
+add_executable(shadow_test tests/shadow_test.cpp)
+target_link_libraries(shadow_test PRIVATE swan_core)
+add_test(NAME shadow COMMAND shadow_test)
 
 add_executable(visibility_test tests/visibility_test.cpp)
 target_link_libraries(visibility_test PRIVATE swan_core)
@@ -145,7 +149,7 @@ install(FILES src/swan.hpp src/assets.hpp src/camera.hpp src/camera_rig.hpp src/
   src/input.hpp src/mesh.hpp src/model.hpp src/physics.hpp src/render_frame.hpp src/render_pose.hpp src/resources.hpp
   src/scene.hpp src/scene_io.hpp src/script_api.hpp src/script_engine.hpp src/script_runtime.hpp src/simulation.hpp
   src/texture.hpp src/visibility.hpp src/fx.hpp src/fx_io.hpp src/fx_runtime.hpp src/fx_player.hpp src/fx_capture.hpp
-  src/timeline.hpp src/image.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/swan)
+  src/timeline.hpp src/image.hpp src/shadow.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/swan)
 install(EXPORT swanTargets NAMESPACE swan:: DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/swan)
 include(CMakePackageConfigHelpers)
 configure_package_config_file(cmake/swanConfig.cmake.in "${CMAKE_CURRENT_BINARY_DIR}/swanConfig.cmake"

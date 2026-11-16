@@ -2,6 +2,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include "render_frame.hpp"
+#include "shadow.hpp"
 #include "game_layer.hpp"
 #include "input.hpp"
 #include "options.hpp"
@@ -52,7 +53,7 @@ private:
     struct Image { VkImage image=VK_NULL_HANDLE; VkDeviceMemory memory=VK_NULL_HANDLE; VkImageView view=VK_NULL_HANDLE; VkExtent2D extent{}; };
     struct PostTargets { VkExtent2D extent{}; Image hdr,depth; std::vector<Image> bloom; std::vector<VkDescriptorSet> sets; };
     void createFrameResources();
-    void writeFrameUniforms(const RenderFrame& frame,const glm::mat4& viewProjection);
+    void writeFrameUniforms(const RenderFrame& frame,const glm::mat4& viewProjection,const ShadowProjection& shadow);
     void createPostPipelines();
     void createPostTargets(VkExtent2D extent);
     void destroyPostTargets();
@@ -60,6 +61,17 @@ private:
     void recordPost(const RenderFrame& frame,VkImageView output,VkExtent2D size);
     static constexpr VkFormat hdrFormat=VK_FORMAT_R16G16B16A16_SFLOAT;
     PostTargets post;
+    // Sun shadow map (frame set binding 1), redrawn each frame before the scene pass.
+    static constexpr uint32_t shadowResolution=2048;
+    void createShadowResources();
+    void destroyShadowResources();
+    void createShadowPipeline();
+    void recordShadows(const RenderFrame& frame,const glm::mat4& shadowViewProjection);
+    Image shadowMap;
+    VkFormat shadowFormat=VK_FORMAT_UNDEFINED;
+    VkSampler shadowSampler=VK_NULL_HANDLE;
+    VkPipeline shadowPipeline=VK_NULL_HANDLE;
+    uint64_t shadowCasters=0,totalShadowCasters=0;
     VkDescriptorSetLayout frameLayout=VK_NULL_HANDLE,postSetLayout=VK_NULL_HANDLE;
     VkDescriptorPool framePool=VK_NULL_HANDLE,postPool=VK_NULL_HANDLE;
     VkDescriptorSet frameSet=VK_NULL_HANDLE;
