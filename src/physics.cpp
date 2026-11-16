@@ -87,6 +87,28 @@ std::vector<EntityId> overlapSphere(const Scene& scene,glm::vec3 center,float ra
     }
     return result;
 }
+Bounds worldBounds(const Scene& scene,EntityId id,bool descendants) {
+    Bounds bounds{glm::vec3(std::numeric_limits<float>::max()),glm::vec3(std::numeric_limits<float>::lowest())};
+    auto include=[&](EntityId entity) {
+        auto box=collisionBox(scene,entity);
+        glm::vec3 half=box.scale*0.5f;
+        // Extent of a yaw-rotated box along the world X and Z axes.
+        float c=std::abs(std::cos(box.yaw)),s=std::abs(std::sin(box.yaw));
+        glm::vec3 extent{c*half.x+s*half.z,half.y,s*half.x+c*half.z};
+        bounds.minimum=glm::min(bounds.minimum,box.position-extent);
+        bounds.maximum=glm::max(bounds.maximum,box.position+extent);
+    };
+    include(id);
+    if(descendants) {
+        std::vector<EntityId> pending{id};
+        auto all=scene.entities();
+        while(!pending.empty()) {
+            auto parent=pending.back();pending.pop_back();
+            for(auto child:all) if(scene.parent(child)==parent) {include(child);pending.push_back(child);}
+        }
+    }
+    return bounds;
+}
 bool capsuleTouches(const Scene& scene,EntityId id,glm::vec3 feet,float radius,float height) {
     return capsuleBox(feet,radius,height,collisionBox(scene,id)).depth>0;
 }

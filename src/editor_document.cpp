@@ -65,6 +65,32 @@ void applyEdit(SceneDocument& document,std::string& selection,const SceneEdit& e
             scene.get(requireEntity(scene,command.key))->effectId=command.effectId;
         } else if constexpr(std::is_same_v<T,SetTimeline>) scene.timeline()=command.value;
         else if constexpr(std::is_same_v<T,SetEnvironment>) scene.setEnvironment(command.value);
+        else if constexpr(std::is_same_v<T,AddTexture>) scene.textures().load(command.id,command.path);
+        else if constexpr(std::is_same_v<T,AddMesh>) scene.meshes().load(command.id,command.path,command.part);
+        else if constexpr(std::is_same_v<T,DuplicateEntity>) {
+            auto source=requireEntity(scene,command.key);
+            for(int i=0;i<3;++i) if(!std::isfinite(command.offset[i])) throw std::invalid_argument("Duplicate offset must be finite");
+            auto parent=scene.parent(source);
+            auto all=scene.entities();
+            // Root: same parent and local placement, shifted by the world offset.
+            Entity root=*scene.get(source);root.key=command.newKey;
+            auto world=scene.worldTransform(source);world.position+=command.offset;
+            root.transform=parent?relativeTransform(scene.worldTransform(*parent),world):world;
+            auto copy=scene.create(root);
+            if(parent) scene.setParent(copy,*parent);
+            selection=scene.get(copy)->key;
+            // Descendants keep their local transforms under the copied parents.
+            std::vector<std::pair<EntityId,EntityId>> pending{{source,copy}};
+            while(!pending.empty()) {
+                auto [from,to]=pending.back();pending.pop_back();
+                for(auto child:all) if(scene.parent(child)==from) {
+                    Entity value=*scene.get(child);value.key.clear();
+                    auto created=scene.create(value);
+                    scene.setParent(created,to);
+                    pending.push_back({child,created});
+                }
+            }
+        }
     },edit);
 }
 }
@@ -83,6 +109,9 @@ std::string describe(const SceneEdit& edit,const Scene& scene) {
         else if constexpr(std::is_same_v<T,SetEffect>) return (command.value?(scene.effects().contains(command.id)?"Edit effect ":"Create effect "):"Delete effect ")+command.id;
         else if constexpr(std::is_same_v<T,SetEntityEffect>) return (command.effectId.empty()?"Remove effect from ":"Set effect of ")+displayName(scene,command.key);
         else if constexpr(std::is_same_v<T,SetTimeline>) return "Edit timeline";
+        else if constexpr(std::is_same_v<T,AddTexture>) return "Add texture "+command.id;
+        else if constexpr(std::is_same_v<T,AddMesh>) return "Add mesh "+command.id;
+        else if constexpr(std::is_same_v<T,DuplicateEntity>) return "Duplicate "+displayName(scene,command.key);
         else return "Edit environment";
     },edit);
 }
