@@ -330,7 +330,7 @@ These are also C++ `EditorDocument` commands (`AddTexture`, `AddMesh`, `Duplicat
 The package installs static libraries, window-free headers, and a CMake package. Link `swan::headless`:
 
 ```cmake
-find_package(swan 0.18 CONFIG REQUIRED)
+find_package(swan 0.19 CONFIG REQUIRED)
 target_link_libraries(app PRIVATE swan::headless)
 ```
 
