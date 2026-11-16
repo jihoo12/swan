@@ -287,6 +287,9 @@ function game.effect(id, options) end
 ---@field bloom? number Bloom strength (0 disables).
 ---@field bloom_threshold? number
 ---@field tonemap? "reinhard"|"aces"
+---@field sun_direction? number[] Direction toward the sun (nonzero).
+---@field shadows? number Sun shadow strength 0..1 (0 disables).
+---@field shadow_distance? number Shadowed range from the camera, 1..1000.
 
 ---A scene being edited. Every call is a validated, undoable document command.
 ---@class Document

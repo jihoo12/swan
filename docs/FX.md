@@ -186,6 +186,14 @@ first and last keys.
 | `bloom` | `0.35` | Glow strength (0 disables the bloom passes). |
 | `bloom_threshold` | `1` | HDR brightness where glow starts (soft knee). |
 | `tonemap` | `"reinhard"` | `aces` gives contrastier, more saturated highlights, which suits FX. |
+| `sun_direction` | `[-0.6, 1, 0.35]` | Direction toward the sun (normalized; any nonzero length). Version 8. |
+| `shadows` | `0.75` | Sun shadow strength 0..1 (0 disables shadow drawing). Version 8. |
+| `shadow_distance` | `40` | Range from the camera that receives sun shadows, 1..1000. Version 8. |
+
+Every scene object casts and receives sun shadows from one 2048² shadow map, refit each frame
+to the camera view out to `shadow_distance` and snapped to whole texels so edges do not shimmer
+as the camera moves. Shadows fade out near the edge of that range. Particles neither cast nor
+receive shadows, and the local light casts none.
 
 ## Lua API summary
 

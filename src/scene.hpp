@@ -24,6 +24,9 @@ struct Environment {
     glm::vec3 background{0.035f,0.065f,0.095f};  // Clear color and fog color.
     float fog=0.00065f;                          // Density over squared distance; 0 disables.
     float ambient=0.24f,sun=0.9f,localLight=1;   // localLight: the cyan light above the origin.
+    glm::vec3 sunDirection{-0.6f,1,0.35f};       // Toward the sun (any nonzero length).
+    float shadows=0.75f;                         // Sun shadow strength 0..1; 0 disables.
+    float shadowDistance=40;                     // Shadowed range from the camera, 1..1000.
     float exposure=1;
     float bloom=0.35f,bloomThreshold=1;          // Glow of HDR values above the threshold.
     ToneMap toneMap=ToneMap::Reinhard;

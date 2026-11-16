@@ -37,7 +37,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     try {
         const auto root=Json::parse(text);
         keys(root,{"format","version","spawn","materials","meshes","textures","scripts","effects","timeline","environment","entities"});
-        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || root.at("version")<1 || root.at("version")>7)
+        if(root.at("format")!="swan-scene" || !root.at("version").is_number_integer() || root.at("version")<1 || root.at("version")>8)
             throw std::invalid_argument("Unsupported scene format/version");
         SceneDocument document;
         document.spawn=vector(root.at("spawn"));
@@ -170,6 +170,9 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
         }
         if(root.contains("environment")) {
             if(root.at("version")<7) throw std::invalid_argument("Environments require scene version 7");
+            for(const char* key:{"sun_direction","shadows","shadow_distance"})
+                if(root.at("version")<8 && root.at("environment").is_object() && root.at("environment").contains(key))
+                    throw std::invalid_argument(std::string("Environment ")+key+" requires scene version 8");
             try {document.scene.setEnvironment(environmentFromJson(root.at("environment")));}
             catch(const std::exception& e) {throw std::invalid_argument(std::string("Environment: ")+e.what());}
         }
@@ -178,7 +181,7 @@ SceneDocument parseScene(std::string_view text,const std::filesystem::path& base
     } catch(const std::exception& e) { throw std::invalid_argument(std::string("Invalid Swan scene: ")+e.what()); }
 }
 std::string serializeScene(const SceneDocument& document,const std::filesystem::path& baseDirectory) {
-    Json root={{"format","swan-scene"},{"version",7},{"spawn",vector(document.spawn)},
+    Json root={{"format","swan-scene"},{"version",8},{"spawn",vector(document.spawn)},
                {"materials",Json::object()},{"meshes",Json::object()},{"textures",Json::object()},{"scripts",Json::object()},{"entities",Json::array()}};
     for(const auto& [id,material]:document.scene.assets().entries())
         root["materials"][id]={{"color",vector(material.color)},{"emission",jsonNumber(material.emission)},

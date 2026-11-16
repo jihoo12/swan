@@ -394,7 +394,7 @@ Json timelineToJson(const Timeline& timeline) {
     return out;
 }
 Environment environmentFromJson(const Json& source,Environment e) {
-    keys(source,{"background","fog","ambient","sun","local_light","exposure","bloom","bloom_threshold","tonemap"},"environment");
+    keys(source,{"background","fog","ambient","sun","local_light","exposure","bloom","bloom_threshold","tonemap","sun_direction","shadows","shadow_distance"},"environment");
     if(!source.is_object()) return e;
     auto has=[&](const char* name){return source.contains(name);};
     if(has("background")) e.background=field("background",[&]{return vec3(source.at("background"));});
@@ -405,6 +405,9 @@ Environment environmentFromJson(const Json& source,Environment e) {
     if(has("exposure")) e.exposure=field("exposure",[&]{return number(source.at("exposure"));});
     if(has("bloom")) e.bloom=field("bloom",[&]{return number(source.at("bloom"));});
     if(has("bloom_threshold")) e.bloomThreshold=field("bloom_threshold",[&]{return number(source.at("bloom_threshold"));});
+    if(has("sun_direction")) e.sunDirection=field("sun_direction",[&]{return vec3(source.at("sun_direction"));});
+    if(has("shadows")) e.shadows=field("shadows",[&]{return number(source.at("shadows"));});
+    if(has("shadow_distance")) e.shadowDistance=field("shadow_distance",[&]{return number(source.at("shadow_distance"));});
     if(has("tonemap")) e.toneMap=field("tonemap",[&]{
         auto name=text(source.at("tonemap"));
         if(name=="reinhard") return ToneMap::Reinhard;
@@ -415,7 +418,8 @@ Environment environmentFromJson(const Json& source,Environment e) {
 }
 Json environmentToJson(const Environment& e) {
     return {{"background",json(e.background)},{"fog",json(e.fog)},{"ambient",json(e.ambient)},{"sun",json(e.sun)},{"local_light",json(e.localLight)},
-            {"exposure",json(e.exposure)},{"bloom",json(e.bloom)},{"bloom_threshold",json(e.bloomThreshold)},{"tonemap",e.toneMap==ToneMap::Aces?"aces":"reinhard"}};
+            {"exposure",json(e.exposure)},{"bloom",json(e.bloom)},{"bloom_threshold",json(e.bloomThreshold)},{"tonemap",e.toneMap==ToneMap::Aces?"aces":"reinhard"},
+            {"sun_direction",json(e.sunDirection)},{"shadows",json(e.shadows)},{"shadow_distance",json(e.shadowDistance)}};
 }
 EffectDef parseEffect(std::string_view text) {
     try {return effectFromJson(Json::parse(text));}

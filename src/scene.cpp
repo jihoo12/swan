@@ -83,6 +83,10 @@ void Scene::setEnvironment(Environment value) {
         if(!finite(v) || v<0) throw std::invalid_argument("Environment fog, lighting, and bloom must be finite and nonnegative");
     if(!finite(value.exposure) || value.exposure<=0 || value.exposure>64) throw std::invalid_argument("Environment exposure must be within 0..64");
     if(!finite(value.bloomThreshold) || value.bloomThreshold<0) throw std::invalid_argument("Environment bloom threshold must be nonnegative");
+    for(int i=0;i<3;++i) if(!finite(value.sunDirection[i])) throw std::invalid_argument("Environment sun direction must be finite");
+    if(glm::length(value.sunDirection)<1e-4f) throw std::invalid_argument("Environment sun direction must be nonzero");
+    if(!finite(value.shadows) || value.shadows<0 || value.shadows>1) throw std::invalid_argument("Environment shadows must be within 0..1");
+    if(!finite(value.shadowDistance) || value.shadowDistance<1 || value.shadowDistance>1000) throw std::invalid_argument("Environment shadow distance must be within 1..1000");
     sceneEnvironment=value;
 }
 void Scene::validateReferences() const {

@@ -8,8 +8,8 @@ void checked(VkResult result,const char* operation) {
     if(result!=VK_SUCCESS) throw std::runtime_error(std::string(operation)+" (VkResult "+std::to_string(result)+")");
 }
 // std140 layout of shaders/frame.glsl.
-struct FrameUniforms { glm::mat4 viewProjection; glm::vec4 eye,right,up,fog,light; };
-static_assert(sizeof(FrameUniforms)==144);
+struct FrameUniforms { glm::mat4 viewProjection; glm::vec4 eye,right,up,fog,light; glm::mat4 shadowViewProjection; glm::vec4 sun,shadow; };
+static_assert(sizeof(FrameUniforms)==240);
 struct PostPush { glm::vec4 texel,params; glm::ivec4 mode; };
 static_assert(sizeof(PostPush)==48);
 constexpr uint32_t maxBloomLevels=6;
@@ -24,15 +24,17 @@ void VulkanRenderer::createFrameResources() {
     VkFormatProperties properties; vkGetPhysicalDeviceFormatProperties(gpu,hdrFormat,&properties);
     VkFormatFeatureFlags needed=VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT|VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
     if((properties.optimalTilingFeatures&needed)!=needed) throw std::runtime_error("GPU lacks blendable, filterable RGBA16F render targets");
-    VkDescriptorSetLayoutBinding uniform{0,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,nullptr};
-    VkDescriptorSetLayoutCreateInfo frameInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO}; frameInfo.bindingCount=1; frameInfo.pBindings=&uniform;
+    createShadowResources();
+    VkDescriptorSetLayoutBinding frameBindings[2]={{0,VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1,VK_SHADER_STAGE_VERTEX_BIT|VK_SHADER_STAGE_FRAGMENT_BIT,nullptr},
+                                                   {1,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr}};
+    VkDescriptorSetLayoutCreateInfo frameInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO}; frameInfo.bindingCount=2; frameInfo.pBindings=frameBindings;
     checked(vkCreateDescriptorSetLayout(device,&frameInfo,nullptr,&frameLayout),"Frame descriptor layout");
     VkDescriptorSetLayoutBinding samplers[2]={{0,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr},
                                               {1,VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1,VK_SHADER_STAGE_FRAGMENT_BIT,nullptr}};
     VkDescriptorSetLayoutCreateInfo postInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO}; postInfo.bindingCount=2; postInfo.pBindings=samplers;
     checked(vkCreateDescriptorSetLayout(device,&postInfo,nullptr,&postSetLayout),"Post descriptor layout");
-    VkDescriptorPoolSize frameSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1};
-    VkDescriptorPoolCreateInfo framePoolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO}; framePoolInfo.maxSets=1; framePoolInfo.poolSizeCount=1; framePoolInfo.pPoolSizes=&frameSize;
+    VkDescriptorPoolSize frameSizes[2]={{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,1},{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,1}};
+    VkDescriptorPoolCreateInfo framePoolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO}; framePoolInfo.maxSets=1; framePoolInfo.poolSizeCount=2; framePoolInfo.pPoolSizes=frameSizes;
     checked(vkCreateDescriptorPool(device,&framePoolInfo,nullptr,&framePool),"Frame descriptor pool");
     VkDescriptorPoolSize postSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,2*(2*maxBloomLevels+2)};
     VkDescriptorPoolCreateInfo postPoolInfo{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO}; postPoolInfo.flags=VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
@@ -49,8 +51,11 @@ void VulkanRenderer::createFrameResources() {
     VkDescriptorSetAllocateInfo set{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO}; set.descriptorPool=framePool; set.descriptorSetCount=1; set.pSetLayouts=&frameLayout;
     checked(vkAllocateDescriptorSets(device,&set,&frameSet),"Frame descriptor set");
     VkDescriptorBufferInfo info{frameBuffer,0,sizeof(FrameUniforms)};
-    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}; write.dstSet=frameSet; write.descriptorCount=1; write.descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; write.pBufferInfo=&info;
-    vkUpdateDescriptorSets(device,1,&write,0,nullptr);
+    VkDescriptorImageInfo shadowInfo{shadowSampler,shadowMap.view,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet writes[2]{{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET},{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET}};
+    writes[0].dstSet=frameSet; writes[0].dstBinding=0; writes[0].descriptorCount=1; writes[0].descriptorType=VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; writes[0].pBufferInfo=&info;
+    writes[1].dstSet=frameSet; writes[1].dstBinding=1; writes[1].descriptorCount=1; writes[1].descriptorType=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; writes[1].pImageInfo=&shadowInfo;
+    vkUpdateDescriptorSets(device,2,writes,0,nullptr);
     VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     sampler.magFilter=sampler.minFilter=VK_FILTER_LINEAR; sampler.mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST;
     sampler.addressModeU=sampler.addressModeV=sampler.addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
@@ -60,12 +65,13 @@ void VulkanRenderer::createFrameResources() {
     layoutInfo.pushConstantRangeCount=1; layoutInfo.pPushConstantRanges=&range;
     checked(vkCreatePipelineLayout(device,&layoutInfo,nullptr,&postLayout),"Post pipeline layout");
 }
-void VulkanRenderer::writeFrameUniforms(const RenderFrame& frame,const glm::mat4& viewProjection) {
+void VulkanRenderer::writeFrameUniforms(const RenderFrame& frame,const glm::mat4& viewProjection,const ShadowProjection& shadow) {
     auto front=forward(frame.camera.yaw,frame.camera.pitch);
     auto right=glm::normalize(glm::cross(front,glm::vec3(0,1,0)));
     const auto& e=frame.environment;
     FrameUniforms u{viewProjection,glm::vec4(frame.camera.position,1),glm::vec4(right,0),glm::vec4(glm::cross(right,front),0),
-                    glm::vec4(e.background,e.fog),glm::vec4(e.ambient,e.sun,e.localLight,0)};
+                    glm::vec4(e.background,e.fog),glm::vec4(e.ambient,e.sun,e.localLight,0),
+                    shadow.viewProjection,glm::vec4(glm::normalize(e.sunDirection),e.shadows),glm::vec4(shadow.texelWorld,1.0f/float(shadowResolution),0,0)};
     // One frame in flight: the previous frame finished at the fence before recording.
     std::memcpy(frameMapped,&u,sizeof u);
 }

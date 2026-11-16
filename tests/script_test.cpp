@@ -160,6 +160,10 @@ void fxApi() {
         doc:add_event{ time = 0.5, effect = "spark", entity = key }
         doc:set_camera{ position = vec3(0, 3, 8), target = vec3(0, 1, 0), fov = 45 }
         doc:set_environment{ bloom = 0.8, tonemap = "aces" }
+        doc:set_environment{ sun_direction = { 0, 1, -1 }, shadows = 0.4, shadow_distance = 30 }
+        assert(doc:environment().shadows == 0.4 and doc:environment().shadow_distance == 30
+            and doc:environment().sun_direction[3] == -1 and doc:environment().bloom == 0.8, "shadow environment merges")
+        assert(not pcall(function() doc:set_environment{ shadows = 2 } end), "shadow strength range")
         doc:set_track{ environment = true, property = "exposure", keys = { { 0, 1 }, { 1, 2 } } }
         local t = doc:timeline()
         assert(#t.tracks == 2 and t.tracks[1].keys[2][1] == 2, "set_track replaces the matching track")
